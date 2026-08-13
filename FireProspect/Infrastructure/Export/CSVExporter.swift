@@ -37,14 +37,9 @@ struct CSVExporter: Sendable {
     }
 
     private let mitigation: FormulaInjectionMitigation
-    private let fileManager: FileManager
 
-    init(
-        mitigation: FormulaInjectionMitigation = .prefixApostrophe,
-        fileManager: FileManager = .default
-    ) {
+    init(mitigation: FormulaInjectionMitigation = .prefixApostrophe) {
         self.mitigation = mitigation
-        self.fileManager = fileManager
     }
 
     static func safeFilename(stem: String, suffix: String = "prospects") -> String {
@@ -102,6 +97,7 @@ struct CSVExporter: Sendable {
 
     private func write(to destination: URL, body: (Writer) throws -> Void) throws {
         guard destination.isFileURL else { throw ExportError.invalidDestination }
+        let fileManager = FileManager.default
         let directory = destination.deletingLastPathComponent()
         let temporary = directory.appendingPathComponent(".\(UUID().uuidString).csv.tmp")
         guard fileManager.createFile(atPath: temporary.path, contents: nil) else {
