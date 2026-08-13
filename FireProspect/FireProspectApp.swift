@@ -30,13 +30,12 @@ struct FireProspectApp: App {
                 }
                 .keyboardShortcut("2", modifiers: .command)
 
-                Divider()
-
-                Button("Settings") {
-                    NotificationCenter.default.post(name: .showSettingsDestination, object: nil)
-                }
-                .keyboardShortcut(",", modifiers: .command)
             }
+        }
+
+        Settings {
+            SettingsTabView()
+                .frame(width: 620, height: 560)
         }
     }
 }
@@ -45,5 +44,4 @@ struct FireProspectApp: App {
 extension Notification.Name {
     static let showSearchDestination = Notification.Name("showSearchDestination")
     static let showProspectsDestination = Notification.Name("showProspectsDestination")
-    static let showSettingsDestination = Notification.Name("showSettingsDestination")
 }

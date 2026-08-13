@@ -36,4 +36,15 @@ struct KeychainHelper {
         }
         return ""
     }
+
+    @discardableResult
+    static func deleteKey() -> Bool {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: firecrawlKeyAccount
+        ]
+        let status = SecItemDelete(query as CFDictionary)
+        return status == errSecSuccess || status == errSecItemNotFound
+    }
 }
