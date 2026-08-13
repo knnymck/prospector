@@ -1,36 +1,58 @@
-//
-//  FireProspectTests.swift
-//  FireProspectTests
-//
-//  Created by Work on 8/10/26.
-//
-
 import XCTest
 @testable import FireProspect
 
 final class FireProspectTests: XCTestCase {
+    func testCityIDIncludesStateAndNormalizesName() {
+        let maine = CityID(stateID: StateID(rawValue: "me"), normalizedName: "  Pórtland ")
+        let oregon = CityID(stateID: StateID(rawValue: "OR"), normalizedName: "Portland")
 
-    override func setUpWithError() throws {
-        // Put setup code here. This method is called before the invocation of each test method in the class.
+        XCTAssertEqual(maine.stateID, StateID(rawValue: "ME"))
+        XCTAssertEqual(maine.normalizedName, "portland")
+        XCTAssertNotEqual(maine, oregon)
     }
 
-    override func tearDownWithError() throws {
-        // Put teardown code here. This method is called after the invocation of each test method in the class.
+    func testEmptyScopesResolveNoPostalCodes() async throws {
+        let repository = BundledGeographyRepository(bundle: Bundle(for: Self.self))
+
+        XCTAssertEqual(try await repository.postalCodes(for: .selectedCities([])), [])
+        XCTAssertEqual(try await repository.postalCodes(for: .allCities(in: [])), [])
     }
 
-    func testExample() throws {
-        // This is an example of a functional test case.
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
-        // Any test you write for XCTest can be annotated as throws and async.
-        // Mark your test throws to produce an unexpected failure when your test encounters an uncaught error.
-        // Mark your test async to allow awaiting for asynchronous code to complete. Check the results with assertions afterwards.
+    func testCSVExporterQuotesAndMitigatesFormulas() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let destination = directory.appendingPathComponent("prospects.csv")
+        let timestamp = Timestamp(rawValue: Date(timeIntervalSince1970: 0))
+        let record = ProspectRecord(
+            id: ProspectID(rawValue: "example.com"),
+            name: "=HYPERLINK(\"bad\"), Inc.",
+            websiteURL: URL(string: "https://example.com")!,
+            phoneNumber: nil,
+            address: PostalAddress(street: nil, city: "Portland", state: "ME", postalCode: "04101"),
+            latitude: 0,
+            longitude: 0,
+            crawlStatus: .notStarted,
+            assignedTeamMemberID: nil,
+            relevance: Relevance(),
+            provenance: [.init(source: .mapKit, query: "engineers", postalCode: .init(rawValue: "04101"), discoveredAt: timestamp)],
+            createdAt: timestamp,
+            updatedAt: timestamp
+        )
+
+        try CSVExporter().exportProspects([record], to: destination, exportedAt: timestamp)
+        let csv = try String(contentsOf: destination, encoding: .utf8)
+
+        XCTAssertTrue(csv.contains("\r\n"))
+        XCTAssertTrue(csv.contains("\"'=HYPERLINK(\"\"bad\"\"), Inc.\""))
+        XCTAssertTrue(csv.contains(CSVExporter.prospectSchemaVersion))
     }
 
-    func testPerformanceExample() throws {
-        // This is an example of a performance test case.
-        self.measure {
-            // Put the code you want to measure the time of here.
-        }
+    func testSafeFilenameRemovesPathCharacters() {
+        XCTAssertEqual(
+            CSVExporter.safeFilename(stem: "../../Civil / Engineering"),
+            "prospects-civil-engineering.csv"
+        )
     }
-
 }

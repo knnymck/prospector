@@ -1,60 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-// MARK: - Location Models
-
-struct CityLocation: Hashable, Identifiable {
-    let cityName: String
-    let stateID: String
-    
-    var id: String { "\(cityName)_\(stateID)" }
-    var displayName: String { "\(cityName), \(stateID)" }
-}
-
-struct ProspectItem: Identifiable, Hashable {
-    let id = UUID()
-    let name: String
-    let street: String
-    let city: String
-    let state: String
-    let zip: String
-    let phone: String
-    let website: String
-    
-    var fullAddress: String {
-        let s = street.trimmingCharacters(in: .whitespaces)
-        let c = city.trimmingCharacters(in: .whitespaces)
-        let st = state.trimmingCharacters(in: .whitespaces)
-        let z = zip.trimmingCharacters(in: .whitespaces)
-        
-        if !s.isEmpty {
-            var addressParts: [String] = [s]
-            if !c.isEmpty && !s.localizedCaseInsensitiveContains(c) {
-                addressParts.append(c)
-            }
-            if !st.isEmpty && !s.localizedCaseInsensitiveContains(st) {
-                addressParts.append(st)
-            }
-            if !z.isEmpty && !s.contains(z) {
-                addressParts.append(z)
-            }
-            return addressParts.joined(separator: ", ")
-        } else {
-            let parts = [c, st, z].filter { !$0.isEmpty }
-            return parts.isEmpty ? "N/A" : parts.joined(separator: ", ")
-        }
-    }
-    
-    var validURL: URL? {
-        let trimmed = website.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty, trimmed != "N/A" else { return nil }
-        if trimmed.lowercased().hasPrefix("http://") || trimmed.lowercased().hasPrefix("https://") {
-            return URL(string: trimmed)
-        }
-        return URL(string: "https://\(trimmed)")
-    }
-}
-
 // MARK: - Flow Layout for Tag/Pill Wrapping
 
 struct FlowLayout: Layout {
@@ -184,58 +130,40 @@ struct SearchTabView: View {
     @State private var category: String = "Civil Engineering"
     
     // Unified State & City selection state
-    @State private var selectedStates: Set<String> = []
+    @State private var selectedStates: Set<StateID> = []
     @State private var stateSearch = ""
     @State private var isStateDropdownFocused = false
     
-    @State private var selectedLocations: Set<CityLocation> = []
+    @State private var selectedCityIDs: Set<CityID> = []
     @State private var selectAllCities = false
+    @State private var allStates: [StateRecord] = []
+    @State private var citySuggestions: [City] = []
+    @State private var targetZips: [PostalCodeRecord] = []
+    @State private var geographyError: String?
     @State private var citySearch = ""
     
     // Execution and results state
     @State private var isSearching = false
     @State private var logOutput = "READY // Select target state and city vectors to initiate search cycle."
     @State private var progressText = ""
-    @State private var searchResults: [ProspectItem] = []
+    @State private var searchResults: [ProspectRecord] = []
+    @State private var exportState: ExportState = .idle
+    @State private var exportHistory: [CSVExporter.Receipt] = []
     
-    private var allStates: [StateModel] {
-        ZipCodeDatabase.getAllStates()
-    }
-    
-    private var filteredStateSuggestions: [StateModel] {
-        if stateSearch.isEmpty {
-            return allStates.filter { !selectedStates.contains($0.stateID) }
-        }
-        return allStates.filter { state in
-            !selectedStates.contains(state.stateID) &&
-            (state.stateName.localizedCaseInsensitiveContains(stateSearch) ||
-             state.stateID.localizedCaseInsensitiveContains(stateSearch))
+    private var filteredStateSuggestions: [StateRecord] {
+        allStates.filter { state in
+            !selectedStates.contains(state.id) &&
+            (stateSearch.isEmpty || state.name.localizedCaseInsensitiveContains(stateSearch) ||
+             state.id.rawValue.localizedCaseInsensitiveContains(stateSearch))
         }
     }
-    
-    // Cascading filter: Only loads cities belonging to currently selected states
-    private var filteredCities: [String] {
-        guard !selectedStates.isEmpty else { return [] }
-        if citySearch.isEmpty {
-            let zips = ZipCodeDatabase.getZipCodes(
-                selectedStates: selectedStates,
-                selectedCities: [],
-                selectAllCities: true
-            )
-            return Array(Set(zips.map(\.cityName))).sorted()
-        }
-        return ZipCodeDatabase.searchCities(query: citySearch, inStates: selectedStates)
+
+    private var filteredCities: [City] { citySuggestions }
+
+    private var searchScope: SearchScope {
+        selectAllCities ? .allCities(in: selectedStates) : .selectedCities(selectedCityIDs)
     }
-    
-    private var targetZips: [ZipCodeModel] {
-        let cityNames = Set(selectedLocations.map(\.cityName))
-        return ZipCodeDatabase.getZipCodes(
-            selectedStates: selectedStates,
-            selectedCities: cityNames,
-            selectAllCities: selectAllCities
-        )
-    }
-    
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
@@ -248,9 +176,10 @@ struct SearchTabView: View {
             .padding(32)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .onAppear {
-            _ = ZipCodeDatabase.loadDatabase()
-        }
+        .task { await loadGeography() }
+        .task(id: selectedStates) { await refreshCitiesAndZIPs() }
+        .task(id: citySearch) { await refreshCities() }
+        .task(id: searchScope) { await refreshZIPs() }
     }
     
     // MARK: - Subviews
@@ -320,16 +249,16 @@ struct SearchTabView: View {
                 if isStateDropdownFocused || !stateSearch.isEmpty {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 2) {
-                            ForEach(filteredStateSuggestions, id: \.stateID) { state in
+                            ForEach(filteredStateSuggestions) { state in
                                 Button(action: {
-                                    selectedStates.insert(state.stateID)
+                                    selectedStates.insert(state.id)
                                     stateSearch = ""
                                 }) {
                                     HStack {
-                                        Text(state.stateName)
+                                        Text(state.name)
                                             .font(.system(size: 11, design: .default))
                                         Spacer()
-                                        Text(state.stateID)
+                                        Text(state.id.rawValue)
                                             .font(.system(size: 10, weight: .bold, design: .monospaced))
                                             .foregroundStyle(.secondary)
                                     }
@@ -355,8 +284,8 @@ struct SearchTabView: View {
             if !selectedStates.isEmpty {
                 FlowLayout(spacing: 4) {
                     ForEach(Array(selectedStates).sorted(), id: \.self) { stateID in
-                        let name = allStates.first(where: { $0.stateID == stateID })?.stateName ?? stateID
-                        RemovablePill(label: "\(name) (\(stateID))") {
+                        let name = allStates.first(where: { $0.id == stateID })?.name ?? stateID.rawValue
+                        RemovablePill(label: "\(name) (\(stateID.rawValue))") {
                             removeState(stateID)
                         }
                     }
@@ -410,12 +339,12 @@ struct SearchTabView: View {
                             .foregroundStyle(.tertiary)
                             .padding(8)
                     } else {
-                        ForEach(filteredCities, id: \.self) { city in
+                        ForEach(filteredCities) { city in
                             Button(action: {
                                 addCityToSelection(city)
                             }) {
                                 HStack {
-                                    Text(city)
+                                    Text(city.displayName)
                                         .font(.system(size: 11, design: .default))
                                     Spacer()
                                     Image(systemName: "plus.circle")
@@ -458,23 +387,28 @@ struct SearchTabView: View {
                 }
             }
             
-            if selectAllCities {
-                Text("All cities within selected state(s) are active.")
+            if selectAllCities && selectedCityIDs.isEmpty {
+                Text("All cities within selected state(s) are active. Explicit city draft is empty.")
                     .font(.system(size: 10, design: .default))
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 2)
-            } else if selectedLocations.isEmpty {
+            } else if selectedCityIDs.isEmpty {
                 Text("No locations selected. Pick a state and select cities to form unified target pills (e.g., 'Abilene, TX').")
                     .font(.system(size: 10, design: .default))
                     .italic()
                     .foregroundStyle(.tertiary)
                     .padding(.vertical, 2)
             } else {
+                if selectAllCities {
+                    Text("Saved explicit-city draft (not active in All Cities mode):")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
                 ScrollView {
                     FlowLayout(spacing: 6) {
-                        ForEach(Array(selectedLocations).sorted(by: { $0.displayName < $1.displayName })) { location in
+                        ForEach(selectedCities.sorted(by: { $0.displayName < $1.displayName })) { location in
                             RemovablePill(label: location.displayName) {
-                                selectedLocations.remove(location)
+                                selectedCityIDs.remove(location.id)
                             }
                         }
                     }
@@ -564,7 +498,7 @@ struct SearchTabView: View {
                 Spacer()
                 
                 // CSV Export Button
-                Button(action: exportResultsToCSV) {
+                Button { Task { await exportResultsToCSV() } } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "square.and.arrow.down")
                             .font(.system(size: 9, weight: .bold))
@@ -585,7 +519,13 @@ struct SearchTabView: View {
                     )
                 }
                 .buttonStyle(.plain)
-                .disabled(searchResults.isEmpty)
+                .disabled(searchResults.isEmpty || exportState.isBusy)
+            }
+
+            if let exportMessage = exportState.message {
+                Text(exportMessage)
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(exportState.isFailure ? Color.red : Color.secondary)
             }
             
             if searchResults.isEmpty {
@@ -647,7 +587,7 @@ struct SearchTabView: View {
                     // Fully Responsive Table Content Rows
                     ScrollView {
                         LazyVStack(spacing: 0) {
-                            ForEach(Array(searchResults.enumerated()), id: \.element.id) { index, item in
+                            ForEach(Array(resultRows.enumerated()), id: \.element.id) { index, item in
                                 HStack(spacing: 12) {
                                     Text("\(index + 1)")
                                         .font(.system(size: 9, weight: .bold, design: .monospaced))
@@ -659,7 +599,7 @@ struct SearchTabView: View {
                                         .lineLimit(1)
                                         .frame(minWidth: 140, maxWidth: .infinity, alignment: .leading)
                                     
-                                    Text(item.fullAddress)
+                                    Text(item.address)
                                         .font(.system(size: 10, design: .default))
                                         .foregroundStyle(.secondary)
                                         .lineLimit(1)
@@ -672,22 +612,16 @@ struct SearchTabView: View {
                                         .frame(width: 110, alignment: .leading)
                                     
                                     Group {
-                                        if let url = item.validURL {
-                                            Link(destination: url) {
-                                                HStack(spacing: 4) {
-                                                    Text(item.website)
-                                                        .lineLimit(1)
-                                                        .underline()
-                                                    Image(systemName: "arrow.up.right.square")
-                                                        .font(.system(size: 8))
-                                                }
-                                                .font(.system(size: 10, design: .monospaced))
-                                                .foregroundStyle(Color.accentColor)
+                                        Link(destination: item.websiteURL) {
+                                            HStack(spacing: 4) {
+                                                Text(item.websiteURL.absoluteString)
+                                                    .lineLimit(1)
+                                                    .underline()
+                                                Image(systemName: "arrow.up.right.square")
+                                                    .font(.system(size: 8))
                                             }
-                                        } else {
-                                            Text(item.website.isEmpty ? "N/A" : item.website)
-                                                .font(.system(size: 10, design: .monospaced))
-                                                .foregroundStyle(.tertiary)
+                                            .font(.system(size: 10, design: .monospaced))
+                                            .foregroundStyle(Color.accentColor)
                                         }
                                     }
                                     .frame(minWidth: 140, maxWidth: .infinity, alignment: .leading)
@@ -760,25 +694,64 @@ struct SearchTabView: View {
     
     // MARK: - Actions & Logic
     
-    private func addCityToSelection(_ cityName: String) {
-        // Associate city with currently selected state(s)
-        for stateID in selectedStates {
-            let loc = CityLocation(cityName: cityName, stateID: stateID)
-            selectedLocations.insert(loc)
+    private var selectedCities: [City] {
+        selectedCityIDs.compactMap { id in
+            citySuggestions.first(where: { $0.id == id }) ?? City(id: id, name: id.normalizedName.capitalized, stateName: id.stateID.rawValue)
         }
     }
-    
-    private func removeState(_ stateID: String) {
-        selectedStates.remove(stateID)
-        // Cascading deletion: remove all city pills associated with this state
-        selectedLocations = selectedLocations.filter { $0.stateID != stateID }
+
+    private func addCityToSelection(_ city: City) {
+        selectedCityIDs.insert(city.id)
     }
-    
+
+    private func removeState(_ stateID: StateID) {
+        selectedStates.remove(stateID)
+        selectedCityIDs = selectedCityIDs.filter { $0.stateID != stateID }
+    }
+
+    @MainActor
+    private func loadGeography() async {
+        do {
+            allStates = try await BundledGeographyRepository.shared.states()
+            geographyError = nil
+        } catch {
+            geographyError = String(describing: error)
+            logOutput = "GEOGRAPHY LOAD FAILED // \(error)"
+        }
+    }
+
+    @MainActor
+    private func refreshCities() async {
+        do {
+            citySuggestions = try await BundledGeographyRepository.shared.cities(matching: citySearch, in: selectedStates)
+        } catch {
+            geographyError = String(describing: error)
+            citySuggestions = []
+        }
+    }
+
+    @MainActor
+    private func refreshZIPs() async {
+        do {
+            targetZips = try await BundledGeographyRepository.shared.postalCodes(for: searchScope)
+            geographyError = nil
+        } catch {
+            geographyError = String(describing: error)
+            targetZips = []
+        }
+    }
+
+    @MainActor
+    private func refreshCitiesAndZIPs() async {
+        await refreshCities()
+        await refreshZIPs()
+    }
+
     private var canSearch: Bool {
         !isSearching &&
         !category.trimmingCharacters(in: .whitespaces).isEmpty &&
         !selectedStates.isEmpty &&
-        (selectAllCities || !selectedLocations.isEmpty) &&
+        (selectAllCities || !selectedCityIDs.isEmpty) &&
         !targetZips.isEmpty
     }
     
@@ -794,14 +767,14 @@ struct SearchTabView: View {
         
         Task {
             let service = MapKitSearchService()
-            var allResults: [String: MapKitSearchService.ProspectResult] = [:]
+            var allResults: [ProspectID: ProspectCandidate] = [:]
             var processed = 0
             
             for zip in zipsToSearch {
                 do {
                     let results = try await service.searchZipCode(category: cat, zip: zip)
                     for r in results {
-                        allResults[r.domainURL] = r
+                        allResults[r.id] = r
                     }
                 } catch {
                     // Continue processing on individual ZIP errors
@@ -821,9 +794,9 @@ struct SearchTabView: View {
             }
             
             // Transform results directly into an immutable `let` array
-            let items: [ProspectItem] = allResults.values
+            let items = allResults.values
                 .sorted(by: { $0.name < $1.name })
-                .map { parseProspectItem(from: $0) }
+                .map { $0.persisted() }
             
             // Build the log string in a mutable buffer, then lock it into a `let` constant
             var logBuffer = "CYCLE COMPLETE // Discovered \(items.count) unique domain(s) across \(zipsToSearch.count) ZIP(s).\n\n"
@@ -844,67 +817,73 @@ struct SearchTabView: View {
         }
     }
     
-    // Export Results handler using NSSavePanel
-    private func exportResultsToCSV() {
+    private var resultRows: [ProspectRowModel] {
+        searchResults.map(ProspectRowModel.init(record:))
+    }
+
+    @MainActor
+    private func exportResultsToCSV() async {
         guard !searchResults.isEmpty else { return }
-        
-        var csvText = "Business Name,Street,City,State,Zip Code,Phone,Website\n"
-        for item in searchResults {
-            let row = [
-                item.name,
-                item.street,
-                item.city,
-                item.state,
-                item.zip,
-                item.phone,
-                item.website
-            ].map { "\"\($0.replacingOccurrences(of: "\"", with: "\"\""))\"" }
-             .joined(separator: ",")
-            csvText.append(row + "\n")
+        exportState = .choosingDestination
+
+        let panel = NSSavePanel()
+        panel.title = "Export Prospects to CSV"
+        panel.nameFieldStringValue = CSVExporter.safeFilename(stem: category)
+        panel.allowedContentTypes = [.commaSeparatedText]
+        let response = await panel.beginResponse()
+        guard response == .OK, let destination = panel.url else {
+            exportState = .cancelled
+            logOutput = "EXPORT CANCELLED // Current search results remain available."
+            return
         }
-        
-        let savePanel = NSSavePanel()
-        savePanel.title = "Export Prospects to CSV"
-        savePanel.nameFieldStringValue = "prospects_\(category.lowercased().replacingOccurrences(of: " ", with: "_")).csv"
-        savePanel.allowedContentTypes = [.commaSeparatedText]
-        
-        savePanel.begin { result in
-            if result == .OK, let url = savePanel.url {
-                try? csvText.write(to: url, atomically: true, encoding: .utf8)
-            }
+
+        exportState = .exporting
+        let records = searchResults
+        do {
+            let receipt = try await Task.detached {
+                try CSVExporter().exportProspects(records, to: destination)
+            }.value
+            exportHistory.append(receipt)
+            exportState = .succeeded(receipt)
+            logOutput = "EXPORT COMPLETE // Saved \(records.count) prospects to \(destination.lastPathComponent)."
+        } catch {
+            exportState = .failed(error.localizedDescription)
+            logOutput = "EXPORT FAILED // \(error.localizedDescription) Current search results remain available."
         }
     }
-    
-    // Robust reflection helper to safely parse all potential address/property names off ProspectResult
-    private func parseProspectItem(from result: MapKitSearchService.ProspectResult) -> ProspectItem {
-        let mirror = Mirror(reflecting: result)
-        var dict: [String: String] = [:]
-        for child in mirror.children {
-            if let label = child.label, let val = child.value as? String {
-                dict[label.lowercased()] = val
+
+    private enum ExportState {
+        case idle
+        case choosingDestination
+        case exporting
+        case succeeded(CSVExporter.Receipt)
+        case cancelled
+        case failed(String)
+
+        var isBusy: Bool {
+            switch self {
+            case .choosingDestination, .exporting: true
+            default: false
             }
         }
-        
-        let name = dict["name"] ?? dict["title"] ?? result.name
-        let website = dict["domainurl"] ?? dict["url"] ?? dict["website"] ?? result.domainURL
-        let phone = dict["phone"] ?? dict["telephone"] ?? dict["phonenumber"] ?? "N/A"
-        
-        // Comprehensive field fallbacks for address resolution
-        let street = dict["street"] ?? dict["streetaddress"] ?? dict["address"] ?? dict["formattedaddress"] ?? ""
-        let city = dict["city"] ?? dict["locality"] ?? dict["subadministrativearea"] ?? ""
-        let state = dict["state"] ?? dict["administrativearea"] ?? ""
-        let zip = dict["zip"] ?? dict["zipcode"] ?? dict["postalcode"] ?? ""
-        
-        return ProspectItem(
-            name: name,
-            street: street,
-            city: city,
-            state: state,
-            zip: zip,
-            phone: phone,
-            website: website
-        )
+
+        var message: String? {
+            switch self {
+            case .idle: nil
+            case .choosingDestination: "EXPORT // Waiting for a save destination…"
+            case .exporting: "EXPORT // Writing UTF-8 CSV…"
+            case .succeeded(let receipt): "EXPORT // Saved \(receipt.rowCount) rows to \(receipt.destination.lastPathComponent)"
+            case .cancelled: "EXPORT // Save cancelled; results were retained."
+            case .failed(let reason): "EXPORT ERROR // \(reason) Results were retained."
+            }
+        }
+
+        var isFailure: Bool {
+            if case .failed = self { return true }
+            return false
+        }
     }
+
 }
 
 // MARK: - Reusable Removable Pill Component
@@ -1013,6 +992,15 @@ struct SettingsTabView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
             firecrawlKey = KeychainHelper.getKey()
+        }
+    }
+}
+
+private extension NSSavePanel {
+    @MainActor
+    func beginResponse() async -> NSApplication.ModalResponse {
+        await withCheckedContinuation { continuation in
+            begin { continuation.resume(returning: $0) }
         }
     }
 }

@@ -2,17 +2,9 @@ import Foundation
 import MapKit
 
 actor MapKitSearchService {
-    
-    struct ProspectResult: Identifiable, Sendable {
-        let id: String
-        let name: String
-        let domainURL: String
-        let zipCode: String
-        let coordinate: CLLocationCoordinate2D
-    }
-    
-    func searchZipCode(category: String, zip: ZipCodeModel) async throws -> [ProspectResult] {
-        print("🔍 Starting grid search for '\(category)' in Zip: \(zip.id)...")
+
+    func searchZipCode(category: String, zip: ZipCodeModel) async throws -> [ProspectCandidate] {
+        print("🔍 Starting grid search for '\(category)' in Zip: \(zip.id.rawValue)...")
         
         let latOffset = 0.015
         let lonOffset = 0.015
@@ -50,7 +42,7 @@ actor MapKitSearchService {
             }
         }
         
-        var uniqueProspects: [String: ProspectResult] = [:]
+        var uniqueProspects: [ProspectID: ProspectCandidate] = [:]
         
         for item in allFoundItems {
             guard let url = item.url?.absoluteString.lowercased(), !url.isEmpty else { continue }
@@ -59,17 +51,12 @@ actor MapKitSearchService {
                 continue
             }
             
-            if let host = item.url?.host {
-                let domainKey = "https://" + host
-                if uniqueProspects[domainKey] == nil {
-                    uniqueProspects[domainKey] = ProspectResult(
-                        id: domainKey,
-                        name: item.name ?? "Unknown Business",
-                        domainURL: domainKey,
-                        zipCode: zip.id,
-                        coordinate: item.placemark.coordinate
-                    )
-                }
+            if let candidate = MapKitProspectAdapter.candidate(
+                from: item,
+                query: category,
+                postalCode: zip.id
+            ), uniqueProspects[candidate.id] == nil {
+                uniqueProspects[candidate.id] = candidate
             }
         }
         
