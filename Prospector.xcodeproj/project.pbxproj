@@ -7,13 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		96C75DA3302A2648009FADE1 /* ProspectorApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C75DA2302A2648009FADE1 /* ProspectorApp.swift */; };
+		96C75DA3302A2648009FADE1 /* FireProspectApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C75DA2302A2648009FADE1 /* FireProspectApp.swift */; };
 		96C75DA5302A2648009FADE1 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C75DA4302A2648009FADE1 /* ContentView.swift */; };
 		96C75DA7302A264A009FADE1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 96C75DA6302A264A009FADE1 /* Assets.xcassets */; };
-		96C75DAA302A264A009FADE1 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 96C75DA9302A264A009FADE1 /* Preview Assets.xcassets */; };
-		96C75DB5302A264A009FADE1 /* ProspectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C75DB4302A264A009FADE1 /* ProspectorTests.swift */; };
-		96C75DBF302A264A009FADE1 /* ProspectorUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C75DBE302A264A009FADE1 /* ProspectorUITests.swift */; };
-		96C75DC1302A264A009FADE1 /* ProspectorUITestsLaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C75DC0302A264A009FADE1 /* ProspectorUITestsLaunchTests.swift */; };
+		96C75DB5302A264A009FADE1 /* FireProspectTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C75DB4302A264A009FADE1 /* FireProspectTests.swift */; };
+		96C75DBF302A264A009FADE1 /* FireProspectUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C75DBE302A264A009FADE1 /* FireProspectUITests.swift */; };
+		96C75DC1302A264A009FADE1 /* FireProspectUITestsLaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C75DC0302A264A009FADE1 /* FireProspectUITestsLaunchTests.swift */; };
 		96C75DCE302A2728009FADE1 /* ZipcodeDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C75DCD302A2728009FADE1 /* ZipcodeDatabase.swift */; };
 		96C75DD0302A2779009FADE1 /* MapKitSearchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C75DCF302A2779009FADE1 /* MapKitSearchService.swift */; };
 		96C75DD6302A88C0009FADE1 /* uszips.json in Resources */ = {isa = PBXBuildFile; fileRef = 96C75DD5302A88BF009FADE1 /* uszips.json */; };
@@ -27,28 +26,28 @@
 			containerPortal = 96C75D97302A2648009FADE1 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 96C75D9E302A2648009FADE1;
-			remoteInfo = Propsector;
+			remoteInfo = FireProspect;
 		};
 		96C75DBB302A264A009FADE1 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 96C75D97302A2648009FADE1 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 96C75D9E302A2648009FADE1;
-			remoteInfo = Propsector;
+			remoteInfo = FireProspect;
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		96C75D9F302A2648009FADE1 /* Prospector.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Prospector.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		96C75DA2302A2648009FADE1 /* ProspectorApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProspectorApp.swift; sourceTree = "<group>"; };
+		96C75D9F302A2648009FADE1 /* FireProspect.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FireProspect.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		96C75DA2302A2648009FADE1 /* FireProspectApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FireProspectApp.swift; sourceTree = "<group>"; };
 		96C75DA4302A2648009FADE1 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		96C75DA6302A264A009FADE1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		96C75DA9302A264A009FADE1 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
-		96C75DB0302A264A009FADE1 /* ProspectorTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ProspectorTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		96C75DB4302A264A009FADE1 /* ProspectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProspectorTests.swift; sourceTree = "<group>"; };
-		96C75DBA302A264A009FADE1 /* ProspectorUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ProspectorUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		96C75DBE302A264A009FADE1 /* ProspectorUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProspectorUITests.swift; sourceTree = "<group>"; };
-		96C75DC0302A264A009FADE1 /* ProspectorUITestsLaunchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProspectorUITestsLaunchTests.swift; sourceTree = "<group>"; };
+		96C75DB0302A264A009FADE1 /* FireProspectTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FireProspectTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		96C75DB4302A264A009FADE1 /* FireProspectTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FireProspectTests.swift; sourceTree = "<group>"; };
+		96C75DBA302A264A009FADE1 /* FireProspectUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FireProspectUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		96C75DBE302A264A009FADE1 /* FireProspectUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FireProspectUITests.swift; sourceTree = "<group>"; };
+		96C75DC0302A264A009FADE1 /* FireProspectUITestsLaunchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FireProspectUITestsLaunchTests.swift; sourceTree = "<group>"; };
 		96C75DCD302A2728009FADE1 /* ZipcodeDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZipcodeDatabase.swift; sourceTree = "<group>"; };
 		96C75DCF302A2779009FADE1 /* MapKitSearchService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapKitSearchService.swift; sourceTree = "<group>"; };
 		96C75DD5302A88BF009FADE1 /* uszips.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = uszips.json; sourceTree = "<group>"; };
@@ -84,12 +83,9 @@
 		96C75D96302A2648009FADE1 = {
 			isa = PBXGroup;
 			children = (
-				96C75DD5302A88BF009FADE1 /* uszips.json */,
-				96C75DD7302CF371009FADE1 /* FirecrawlService.swift */,
-				96C75DD8302CF371009FADE1 /* KeychainHelper.swift */,
-				96C75DA1302A2648009FADE1 /* Prospector */,
-				96C75DB3302A264A009FADE1 /* ProspectorTests */,
-				96C75DBD302A264A009FADE1 /* ProspectorUITests */,
+				96C75DA1302A2648009FADE1 /* FireProspect */,
+				96C75DB3302A264A009FADE1 /* FireProspectTests */,
+				96C75DBD302A264A009FADE1 /* FireProspectUITests */,
 				96C75DA0302A2648009FADE1 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -97,24 +93,43 @@
 		96C75DA0302A2648009FADE1 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				96C75D9F302A2648009FADE1 /* Prospector.app */,
-				96C75DB0302A264A009FADE1 /* ProspectorTests.xctest */,
-				96C75DBA302A264A009FADE1 /* ProspectorUITests.xctest */,
+				96C75D9F302A2648009FADE1 /* FireProspect.app */,
+				96C75DB0302A264A009FADE1 /* FireProspectTests.xctest */,
+				96C75DBA302A264A009FADE1 /* FireProspectUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
 		};
-		96C75DA1302A2648009FADE1 /* Prospector */ = {
+		96C75DA1302A2648009FADE1 /* FireProspect */ = {
 			isa = PBXGroup;
 			children = (
-				96C75DA2302A2648009FADE1 /* ProspectorApp.swift */,
+				96C75DA2302A2648009FADE1 /* FireProspectApp.swift */,
 				96C75DA4302A2648009FADE1 /* ContentView.swift */,
 				96C75DCD302A2728009FADE1 /* ZipcodeDatabase.swift */,
 				96C75DCF302A2779009FADE1 /* MapKitSearchService.swift */,
-				96C75DA6302A264A009FADE1 /* Assets.xcassets */,
+				96C75DDE302CF371009FADE1 /* Infrastructure */,
+				96C75DDF302CF371009FADE1 /* Resources */,
 				96C75DA8302A264A009FADE1 /* Preview Content */,
 			);
-			path = Prospector;
+			path = FireProspect;
+			sourceTree = "<group>";
+		};
+		96C75DDE302CF371009FADE1 /* Infrastructure */ = {
+			isa = PBXGroup;
+			children = (
+				96C75DD7302CF371009FADE1 /* FirecrawlService.swift */,
+				96C75DD8302CF371009FADE1 /* KeychainHelper.swift */,
+			);
+			path = Infrastructure;
+			sourceTree = "<group>";
+		};
+		96C75DDF302CF371009FADE1 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				96C75DA6302A264A009FADE1 /* Assets.xcassets — app icon and accent color */,
+				96C75DD5302A88BF009FADE1 /* uszips.json — ZIP code lookup database */,
+			);
+			path = Resources;
 			sourceTree = "<group>";
 		};
 		96C75DA8302A264A009FADE1 /* Preview Content */ = {
@@ -125,29 +140,29 @@
 			path = "Preview Content";
 			sourceTree = "<group>";
 		};
-		96C75DB3302A264A009FADE1 /* ProspectorTests */ = {
+		96C75DB3302A264A009FADE1 /* FireProspectTests */ = {
 			isa = PBXGroup;
 			children = (
-				96C75DB4302A264A009FADE1 /* ProspectorTests.swift */,
+				96C75DB4302A264A009FADE1 /* FireProspectTests.swift */,
 			);
-			path = ProspectorTests;
+			path = FireProspectTests;
 			sourceTree = "<group>";
 		};
-		96C75DBD302A264A009FADE1 /* ProspectorUITests */ = {
+		96C75DBD302A264A009FADE1 /* FireProspectUITests */ = {
 			isa = PBXGroup;
 			children = (
-				96C75DBE302A264A009FADE1 /* ProspectorUITests.swift */,
-				96C75DC0302A264A009FADE1 /* ProspectorUITestsLaunchTests.swift */,
+				96C75DBE302A264A009FADE1 /* FireProspectUITests.swift */,
+				96C75DC0302A264A009FADE1 /* FireProspectUITestsLaunchTests.swift */,
 			);
-			path = ProspectorUITests;
+			path = FireProspectUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		96C75D9E302A2648009FADE1 /* Prospector */ = {
+		96C75D9E302A2648009FADE1 /* FireProspect */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 96C75DC4302A264A009FADE1 /* Build configuration list for PBXNativeTarget "Prospector" */;
+			buildConfigurationList = 96C75DC4302A264A009FADE1 /* Build configuration list for PBXNativeTarget "FireProspect" */;
 			buildPhases = (
 				96C75D9B302A2648009FADE1 /* Sources */,
 				96C75D9C302A2648009FADE1 /* Frameworks */,
@@ -157,14 +172,16 @@
 			);
 			dependencies = (
 			);
-			name = Prospector;
-			productName = Propsector;
-			productReference = 96C75D9F302A2648009FADE1 /* Prospector.app */;
+			packageProductDependencies = ( /* No external Swift package dependencies. */
+			);
+			name = FireProspect;
+			productName = FireProspect;
+			productReference = 96C75D9F302A2648009FADE1 /* FireProspect.app */;
 			productType = "com.apple.product-type.application";
 		};
-		96C75DAF302A264A009FADE1 /* ProspectorTests */ = {
+		96C75DAF302A264A009FADE1 /* FireProspectTests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 96C75DC7302A264A009FADE1 /* Build configuration list for PBXNativeTarget "ProspectorTests" */;
+			buildConfigurationList = 96C75DC7302A264A009FADE1 /* Build configuration list for PBXNativeTarget "FireProspectTests" */;
 			buildPhases = (
 				96C75DAC302A264A009FADE1 /* Sources */,
 				96C75DAD302A264A009FADE1 /* Frameworks */,
@@ -175,14 +192,16 @@
 			dependencies = (
 				96C75DB2302A264A009FADE1 /* PBXTargetDependency */,
 			);
-			name = ProspectorTests;
-			productName = PropsectorTests;
-			productReference = 96C75DB0302A264A009FADE1 /* ProspectorTests.xctest */;
+			packageProductDependencies = ( /* No external Swift package dependencies. */
+			);
+			name = FireProspectTests;
+			productName = FireProspectTests;
+			productReference = 96C75DB0302A264A009FADE1 /* FireProspectTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		96C75DB9302A264A009FADE1 /* ProspectorUITests */ = {
+		96C75DB9302A264A009FADE1 /* FireProspectUITests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 96C75DCA302A264A009FADE1 /* Build configuration list for PBXNativeTarget "ProspectorUITests" */;
+			buildConfigurationList = 96C75DCA302A264A009FADE1 /* Build configuration list for PBXNativeTarget "FireProspectUITests" */;
 			buildPhases = (
 				96C75DB6302A264A009FADE1 /* Sources */,
 				96C75DB7302A264A009FADE1 /* Frameworks */,
@@ -193,9 +212,11 @@
 			dependencies = (
 				96C75DBC302A264A009FADE1 /* PBXTargetDependency */,
 			);
-			name = ProspectorUITests;
-			productName = PropsectorUITests;
-			productReference = 96C75DBA302A264A009FADE1 /* ProspectorUITests.xctest */;
+			packageProductDependencies = ( /* No external Swift package dependencies. */
+			);
+			name = FireProspectUITests;
+			productName = FireProspectUITests;
+			productReference = 96C75DBA302A264A009FADE1 /* FireProspectUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 /* End PBXNativeTarget section */
@@ -221,7 +242,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 96C75D9A302A2648009FADE1 /* Build configuration list for PBXProject "Prospector" */;
+			buildConfigurationList = 96C75D9A302A2648009FADE1 /* Build configuration list for PBXProject "FireProspect" */;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -234,9 +255,9 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				96C75D9E302A2648009FADE1 /* Prospector */,
-				96C75DAF302A264A009FADE1 /* ProspectorTests */,
-				96C75DB9302A264A009FADE1 /* ProspectorUITests */,
+				96C75D9E302A2648009FADE1 /* FireProspect */,
+				96C75DAF302A264A009FADE1 /* FireProspectTests */,
+				96C75DB9302A264A009FADE1 /* FireProspectUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -246,9 +267,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				96C75DD6302A88C0009FADE1 /* uszips.json in Resources */,
-				96C75DAA302A264A009FADE1 /* Preview Assets.xcassets in Resources */,
-				96C75DA7302A264A009FADE1 /* Assets.xcassets in Resources */,
+				96C75DD6302A88C0009FADE1 /* uszips.json in Resources — ZIP code lookup database */,
+				96C75DA7302A264A009FADE1 /* Assets.xcassets in Resources — app icon and accent color */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -277,7 +297,7 @@
 				96C75DDA302CF371009FADE1 /* KeychainHelper.swift in Sources */,
 				96C75DD9302CF371009FADE1 /* FirecrawlService.swift in Sources */,
 				96C75DD0302A2779009FADE1 /* MapKitSearchService.swift in Sources */,
-				96C75DA3302A2648009FADE1 /* ProspectorApp.swift in Sources */,
+				96C75DA3302A2648009FADE1 /* FireProspectApp.swift in Sources */,
 				96C75DCE302A2728009FADE1 /* ZipcodeDatabase.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -286,7 +306,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				96C75DB5302A264A009FADE1 /* ProspectorTests.swift in Sources */,
+				96C75DB5302A264A009FADE1 /* FireProspectTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -294,8 +314,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				96C75DBF302A264A009FADE1 /* ProspectorUITests.swift in Sources */,
-				96C75DC1302A264A009FADE1 /* ProspectorUITestsLaunchTests.swift in Sources */,
+				96C75DBF302A264A009FADE1 /* FireProspectUITests.swift in Sources */,
+				96C75DC1302A264A009FADE1 /* FireProspectUITestsLaunchTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -304,12 +324,12 @@
 /* Begin PBXTargetDependency section */
 		96C75DB2302A264A009FADE1 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 96C75D9E302A2648009FADE1 /* Prospector */;
+			target = 96C75D9E302A2648009FADE1 /* FireProspect */;
 			targetProxy = 96C75DB1302A264A009FADE1 /* PBXContainerItemProxy */;
 		};
 		96C75DBC302A264A009FADE1 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 96C75D9E302A2648009FADE1 /* Prospector */;
+			target = 96C75D9E302A2648009FADE1 /* FireProspect */;
 			targetProxy = 96C75DBB302A264A009FADE1 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -438,11 +458,11 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = Prospector/Prospector.entitlements;
+				CODE_SIGN_ENTITLEMENTS = FireProspect/FireProspect.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_ASSET_PATHS = "\"FireProspect/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -451,7 +471,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.knnymck.Propsector;
+				PRODUCT_BUNDLE_IDENTIFIER = com.knnymck.FireProspect;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -463,11 +483,10 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = Prospector/Prospector.entitlements;
+				CODE_SIGN_ENTITLEMENTS = FireProspect/FireProspect.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_ASSET_PATHS = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -476,7 +495,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.knnymck.Propsector;
+				PRODUCT_BUNDLE_IDENTIFIER = com.knnymck.FireProspect;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -493,11 +512,11 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.4;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.knnymck.PropsectorTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.knnymck.FireProspectTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Prospector.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Prospector";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/FireProspect.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/FireProspect";
 			};
 			name = Debug;
 		};
@@ -511,11 +530,11 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.4;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.knnymck.PropsectorTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.knnymck.FireProspectTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Prospector.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Prospector";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/FireProspect.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/FireProspect";
 			};
 			name = Release;
 		};
@@ -527,11 +546,11 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.knnymck.PropsectorUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.knnymck.FireProspectUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = Propsector;
+				TEST_TARGET_NAME = FireProspect;
 			};
 			name = Debug;
 		};
@@ -543,18 +562,18 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.knnymck.PropsectorUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.knnymck.FireProspectUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = Propsector;
+				TEST_TARGET_NAME = FireProspect;
 			};
 			name = Release;
 		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		96C75D9A302A2648009FADE1 /* Build configuration list for PBXProject "Prospector" */ = {
+		96C75D9A302A2648009FADE1 /* Build configuration list for PBXProject "FireProspect" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				96C75DC2302A264A009FADE1 /* Debug */,
@@ -563,7 +582,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		96C75DC4302A264A009FADE1 /* Build configuration list for PBXNativeTarget "Prospector" */ = {
+		96C75DC4302A264A009FADE1 /* Build configuration list for PBXNativeTarget "FireProspect" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				96C75DC5302A264A009FADE1 /* Debug */,
@@ -572,7 +591,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		96C75DC7302A264A009FADE1 /* Build configuration list for PBXNativeTarget "ProspectorTests" */ = {
+		96C75DC7302A264A009FADE1 /* Build configuration list for PBXNativeTarget "FireProspectTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				96C75DC8302A264A009FADE1 /* Debug */,
@@ -581,7 +600,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		96C75DCA302A264A009FADE1 /* Build configuration list for PBXNativeTarget "ProspectorUITests" */ = {
+		96C75DCA302A264A009FADE1 /* Build configuration list for PBXNativeTarget "FireProspectUITests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				96C75DCB302A264A009FADE1 /* Debug */,
