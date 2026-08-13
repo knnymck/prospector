@@ -20,15 +20,20 @@ struct FireProspectApp: App {
         }
         .commands {
             CommandMenu("Navigate") {
+                Button("Home") {
+                    NotificationCenter.default.post(name: .showHomeDestination, object: nil)
+                }
+                .keyboardShortcut("1", modifiers: .command)
+
                 Button("Search") {
                     NotificationCenter.default.post(name: .showSearchDestination, object: nil)
                 }
-                .keyboardShortcut("1", modifiers: .command)
+                .keyboardShortcut("2", modifiers: .command)
 
                 Button("Prospects") {
                     NotificationCenter.default.post(name: .showProspectsDestination, object: nil)
                 }
-                .keyboardShortcut("2", modifiers: .command)
+                .keyboardShortcut("3", modifiers: .command)
 
             }
         }
@@ -42,6 +47,7 @@ struct FireProspectApp: App {
 
 
 extension Notification.Name {
+    static let showHomeDestination = Notification.Name("showHomeDestination")
     static let showSearchDestination = Notification.Name("showSearchDestination")
     static let showProspectsDestination = Notification.Name("showProspectsDestination")
 }

@@ -50,33 +50,41 @@ struct FlowLayout: Layout {
 // MARK: - Root Application Window
 
 struct ContentView: View {
-    @State private var selectedDestination: SidebarDestination? = .search
+    @State private var selectedDestination: SidebarDestination? = .home
     @State private var searchResults: [ProspectRecord] = []
     @State private var searchHistory = SearchHistoryStore.load()
     @State private var currentKeywords: [String] = []
     @State private var currentLocations: [String] = []
 
     enum SidebarDestination: Hashable, Identifiable {
+        case home
         case search
         case prospects
+        case settings
         case history(UUID)
 
         var id: String { identifier }
 
         var identifier: String {
             switch self {
+            case .home: "home"
             case .search: "search"
             case .prospects: "prospects"
+            case .settings: "settings"
             case .history(let id): "history.\(id.uuidString)"
             }
         }
 
         var title: String {
             switch self {
+            case .home:
+                "Home"
             case .search:
                 "Search"
             case .prospects:
                 "Prospects"
+            case .settings:
+                "Settings"
             case .history(let id):
                 id.uuidString
             }
@@ -84,21 +92,17 @@ struct ContentView: View {
 
         var systemImage: String {
             switch self {
+            case .home:
+                "house"
             case .search:
                 "magnifyingglass"
             case .prospects:
                 "person.2"
+            case .settings:
+                "gearshape"
             case .history:
                 "clock"
             }
-        }
-    }
-
-    private var historyByDay: [(date: Date, entries: [SearchHistoryEntry])] {
-        let calendar = Calendar.current
-        let groups = Dictionary(grouping: searchHistory) { calendar.startOfDay(for: $0.searchedAt) }
-        return groups.keys.sorted(by: >).map { date in
-            (date, groups[date, default: []].sorted { $0.searchedAt > $1.searchedAt })
         }
     }
 
@@ -130,43 +134,48 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 0) {
                 List(selection: $selectedDestination) {
                     Section {
+                        destinationRow(.home)
                         destinationRow(.search)
-                        DisclosureGroup {
-                            if searchHistory.isEmpty {
-                                Text("No saved searches")
-                                    .font(.caption)
-                                    .foregroundStyle(.tertiary)
-                            } else {
-                                ForEach(historyByDay, id: \.date) { group in
-                                    DisclosureGroup(group.date.formatted(date: .abbreviated, time: .omitted)) {
-                                        ForEach(group.entries) { entry in
-                                            Label(entry.searchedAt.formatted(date: .omitted, time: .shortened), systemImage: "clock")
-                                                .badge(entry.results.count)
-                                                .tag(SidebarDestination.history(entry.id))
-                                                .accessibilityLabel("Search from \(entry.title), \(entry.results.count) prospects")
-                                        }
-                                    }
-                                }
-                            }
-                        } label: {
-                            destinationRow(.prospects)
-                        }
+                        destinationRow(.prospects)
                     }
                 }
                 .listStyle(.sidebar)
                 .accessibilityLabel("Application navigation")
                 .accessibilityIdentifier("sidebar.navigation")
+                .safeAreaInset(edge: .bottom) {
+                    Button {
+                        selectedDestination = .settings
+                    } label: {
+                        Label("Settings", systemImage: "gearshape")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                            .background(selectedDestination == .settings ? Color.accentColor.opacity(0.18) : Color.clear)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(8)
+                    .accessibilityIdentifier("sidebar.destination.settings")
+                }
             }
             .navigationTitle("FireProspect")
             .background(Color(nsColor: .windowBackgroundColor))
             .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 280)
         } detail: {
             Group {
-                switch selectedDestination ?? .search {
+                switch selectedDestination ?? .home {
+                case .home:
+                    HomeView(searchHistory: searchHistory) { entry in
+                        selectedDestination = .history(entry.id)
+                    } openSettings: {
+                        selectedDestination = .settings
+                    }
                 case .search:
                     SearchTabView(searchResults: $searchResults, onSearchCompleted: recordSearch)
                 case .prospects:
                     ProspectsView(searchResults: searchResults, keywords: currentKeywords, locations: currentLocations)
+                case .settings:
+                    SettingsTabView()
                 case .history:
                     ProspectsView(
                         searchResults: selectedHistory?.results ?? [],
@@ -177,7 +186,10 @@ struct ContentView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(AppBackground())
-            .navigationTitle(selectedHistory?.title ?? (selectedDestination ?? .search).title)
+            .navigationTitle(selectedHistory?.title ?? (selectedDestination ?? .home).title)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .showHomeDestination)) { _ in
+            selectedDestination = .home
         }
         .onReceive(NotificationCenter.default.publisher(for: .showSearchDestination)) { _ in
             selectedDestination = .search
@@ -194,6 +206,117 @@ private struct AppBackground: View {
     var body: some View {
         Color(nsColor: .windowBackgroundColor)
             .ignoresSafeArea()
+    }
+}
+
+// MARK: - Home
+
+struct HomeView: View {
+    let searchHistory: [SearchHistoryEntry]
+    let openSearch: (SearchHistoryEntry) -> Void
+    let openSettings: () -> Void
+    @State private var remainingCredits: Int?
+    @State private var creditStatus = "Checking monthly usage…"
+    @State private var modelAvailability: LocalModelAvailability = .checking
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Welcome back")
+                        .font(.largeTitle.weight(.bold))
+                    Text("Review recent work and the services that power your prospecting.")
+                        .foregroundStyle(.secondary)
+                }
+
+                HStack(alignment: .top, spacing: 16) {
+                    statusCard(title: "Firecrawl", image: "flame.fill") {
+                        if KeychainHelper.getKey().isEmpty {
+                            Text("Firecrawl not connected").font(.headline)
+                            Text("Connect an API key to view this month's remaining crawl credits.")
+                                .font(.callout).foregroundStyle(.secondary)
+                            Button("Connect Firecrawl", action: openSettings)
+                                .buttonStyle(.borderedProminent)
+                        } else {
+                            Text(remainingCredits.map { String($0) } ?? "—")
+                                .font(.system(size: 34, weight: .semibold, design: .rounded))
+                                .monospacedDigit()
+                            Text(remainingCredits == nil ? creditStatus : "crawl credits remaining this month")
+                                .font(.callout).foregroundStyle(.secondary)
+                        }
+                    }
+
+                    statusCard(title: "Local SLM", image: "cpu") {
+                        Label(modelAvailability == .ready ? "Active" : "Not active", systemImage: modelAvailability == .ready ? "checkmark.circle.fill" : "pause.circle")
+                            .font(.headline)
+                            .foregroundStyle(modelAvailability == .ready ? Color.green : Color.secondary)
+                        Text(LocalModelService.configuredModel)
+                            .font(.title3.monospaced())
+                        Text(modelAvailability.label)
+                            .font(.callout).foregroundStyle(.secondary)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Recent searches").font(.title2.weight(.semibold))
+                    if searchHistory.isEmpty {
+                        ContentUnavailableView("No Recent Searches", systemImage: "clock", description: Text("Completed searches will appear here."))
+                            .frame(maxWidth: .infinity, minHeight: 180)
+                    } else {
+                        ForEach(searchHistory.prefix(8)) { entry in
+                            Button { openSearch(entry) } label: {
+                                HStack(spacing: 14) {
+                                    Image(systemName: "magnifyingglass")
+                                        .foregroundStyle(Color.accentColor)
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text((entry.keywords ?? []).first ?? "Prospect search").font(.headline)
+                                        Text(entry.searchedAt.formatted(date: .abbreviated, time: .shortened))
+                                            .font(.caption).foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    Text("\(entry.results.count) prospects").foregroundStyle(.secondary)
+                                    Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+                                }
+                                .padding(14)
+                                .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 10))
+                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.1)))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+            .padding(32)
+            .frame(maxWidth: 1100, alignment: .leading)
+        }
+        .accessibilityIdentifier("detail.home")
+        .task { await refreshStatuses() }
+    }
+
+    private func statusCard<Content: View>(title: String, image: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label(title, systemImage: image).font(.title3.weight(.semibold))
+            content()
+            Spacer(minLength: 0)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, minHeight: 180, alignment: .topLeading)
+        .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.12)))
+    }
+
+    @MainActor
+    private func refreshStatuses() async {
+        modelAvailability = await LocalModelService.shared.availability()
+        let key = KeychainHelper.getKey()
+        guard !key.isEmpty else { creditStatus = "Firecrawl not connected"; return }
+        do {
+            remainingCredits = try await FirecrawlService.shared.remainingCredits(apiKey: key)
+            creditStatus = "crawl credits remaining this month"
+        } catch {
+            remainingCredits = nil
+            creditStatus = "Monthly usage is currently unavailable."
+        }
     }
 }
 
@@ -885,24 +1008,26 @@ struct ProspectsView: View {
     }
 
     private var frozenProspectsTable: some View {
-        ScrollView(.vertical) {
-            HStack(alignment: .top, spacing: 0) {
-                VStack(spacing: 0) {
-                    frozenRow(number: "#", business: "Business", isHeader: true)
-                    ForEach(rows) { row in
-                        frozenRow(number: "\(row.number)", business: row.prospect.name, id: row.id)
-                    }
-                }
-                .background(.background)
-                .zIndex(1)
-
-                ScrollView(.horizontal) {
+        GeometryReader { geometry in
+            let detailWidth = max(52, (geometry.size.width - 354) / 6)
+            ScrollView(.vertical) {
+                HStack(alignment: .top, spacing: 0) {
                     VStack(spacing: 0) {
-                        detailRow(values: ["Address", "Phone", "Website", "Team Page", "Found Emails", "Sitemap"], isHeader: true)
+                        frozenRow(number: "#", business: "Business", isHeader: true)
                         ForEach(rows) { row in
-                            detailProspectRow(row)
+                            frozenRow(number: "\(row.number)", business: row.prospect.name, id: row.id)
                         }
                     }
+                    .background(Color(nsColor: .windowBackgroundColor))
+                    .zIndex(1)
+
+                    VStack(spacing: 0) {
+                        detailRow(values: ["Address", "Phone", "Website", "Team Page", "Found Emails", "Sitemap"], width: detailWidth, isHeader: true)
+                        ForEach(rows) { row in
+                            detailProspectRow(row, width: detailWidth)
+                        }
+                    }
+                    .background(Color.primary.opacity(0.018))
                 }
             }
         }
@@ -927,34 +1052,36 @@ struct ProspectsView: View {
         .padding(.horizontal, 8)
         .frame(height: 36)
         .background(rowBackground(id))
+        .overlay(alignment: .bottom) { Divider() }
         .contentShape(Rectangle())
         .onTapGesture { if let id { selectedProspectID = id } }
         .onHover { hovering in if let id { hoveredProspectID = hovering ? id : nil } }
         .animation(.easeOut(duration: 0.12), value: hoveredProspectID)
     }
 
-    private func detailRow(values: [String], id: ProspectID? = nil, isHeader: Bool = false) -> some View {
-        HStack(spacing: 16) {
+    private func detailRow(values: [String], width: CGFloat, id: ProspectID? = nil, isHeader: Bool = false) -> some View {
+        HStack(spacing: 12) {
             ForEach(Array(values.enumerated()), id: \.offset) { _, value in
-                Text(value).lineLimit(1).frame(width: 180, alignment: .leading)
+                Text(value).lineLimit(1).frame(width: width, alignment: .leading)
             }
         }
         .font(isHeader ? .caption.weight(.semibold) : .callout)
         .padding(.horizontal, 12)
         .frame(height: 36)
         .background(rowBackground(id))
+        .overlay(alignment: .bottom) { Divider() }
         .contentShape(Rectangle())
         .onTapGesture { if let id { selectedProspectID = id } }
         .onHover { hovering in if let id { hoveredProspectID = hovering ? id : nil } }
         .animation(.easeOut(duration: 0.12), value: hoveredProspectID)
     }
 
-    private func detailProspectRow(_ row: NumberedProspectRow) -> some View {
-        HStack(spacing: 16) {
-            detailCell(row.prospect.address)
-            detailCell(row.prospect.phone)
+    private func detailProspectRow(_ row: NumberedProspectRow, width: CGFloat) -> some View {
+        HStack(spacing: 12) {
+            detailCell(row.prospect.address, width: width)
+            detailCell(row.prospect.phone, width: width)
             Link(row.prospect.websiteURL.host() ?? row.prospect.websiteURL.absoluteString, destination: row.prospect.websiteURL)
-                .lineLimit(1).frame(width: 180, alignment: .leading)
+                .lineLimit(1).frame(width: width, alignment: .leading)
             Group {
                 if let url = enrichmentReceipts[row.id]?.selectedURL {
                     Link("Open", destination: url)
@@ -962,22 +1089,23 @@ struct ProspectsView: View {
                     Text("—").foregroundStyle(.secondary)
                 }
             }
-            .frame(width: 180, alignment: .leading)
-            detailCell(foundEmails(for: row.id)).textSelection(.enabled)
-            detailCell(sitemapStatus(for: row.id))
+            .frame(width: width, alignment: .leading)
+            detailCell(foundEmails(for: row.id), width: width).textSelection(.enabled)
+            detailCell(sitemapStatus(for: row.id), width: width)
         }
         .font(.callout)
         .padding(.horizontal, 12)
         .frame(height: 36)
         .background(rowBackground(row.id))
+        .overlay(alignment: .bottom) { Divider() }
         .contentShape(Rectangle())
         .onTapGesture { selectedProspectID = row.id }
         .onHover { hoveredProspectID = $0 ? row.id : nil }
         .animation(.easeOut(duration: 0.12), value: hoveredProspectID)
     }
 
-    private func detailCell(_ value: String) -> some View {
-        Text(value).lineLimit(1).frame(width: 180, alignment: .leading)
+    private func detailCell(_ value: String, width: CGFloat) -> some View {
+        Text(value).lineLimit(1).frame(width: width, alignment: .leading)
     }
 
     private var selectedProspect: ProspectRecord? {
