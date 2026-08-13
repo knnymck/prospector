@@ -22,6 +22,8 @@
 		A20000010000000000000001 /* Prospect.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000110000000000000001 /* Prospect.swift */; };
 		A20000020000000000000001 /* CSVExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000120000000000000001 /* CSVExporter.swift */; };
 		A20000030000000000000001 /* MapKitProspectAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000130000000000000001 /* MapKitProspectAdapter.swift */; };
+		A30000020000000000000001 /* SiteEnrichmentService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000120000000000000001 /* SiteEnrichmentService.swift */; };
+		A30000010000000000000001 /* LocalModelService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000110000000000000001 /* LocalModelService.swift */; };
 		A10000030000000000000001 /* GeographyDataMetadata.json in Resources */ = {isa = PBXBuildFile; fileRef = A10000130000000000000001 /* GeographyDataMetadata.json */; };
 /* End PBXBuildFile section */
 
@@ -62,6 +64,8 @@
 		A20000110000000000000001 /* Prospect.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Prospect.swift; sourceTree = "<group>"; };
 		A20000120000000000000001 /* CSVExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CSVExporter.swift; sourceTree = "<group>"; };
 		A20000130000000000000001 /* MapKitProspectAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapKitProspectAdapter.swift; sourceTree = "<group>"; };
+		A30000120000000000000001 /* SiteEnrichmentService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiteEnrichmentService.swift; sourceTree = "<group>"; };
+		A30000110000000000000001 /* LocalModelService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalModelService.swift; sourceTree = "<group>"; };
 		A10000130000000000000001 /* GeographyDataMetadata.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = GeographyDataMetadata.json; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -130,6 +134,8 @@
 				A10000230000000000000001 /* Geography */,
 				A20000210000000000000001 /* Export */,
 				A20000220000000000000001 /* MapKit */,
+				A30000110000000000000001 /* LocalModelService.swift */,
+				A30000120000000000000001 /* SiteEnrichmentService.swift */,
 				96C75DD7302CF371009FADE1 /* FirecrawlService.swift */,
 				96C75DD8302CF371009FADE1 /* KeychainHelper.swift */,
 			);
@@ -342,6 +348,8 @@
 				96C75DDA302CF371009FADE1 /* KeychainHelper.swift in Sources */,
 				96C75DD9302CF371009FADE1 /* FirecrawlService.swift in Sources */,
 				96C75DD0302A2779009FADE1 /* MapKitSearchService.swift in Sources */,
+				A30000010000000000000001 /* LocalModelService.swift in Sources */,
+				A30000020000000000000001 /* SiteEnrichmentService.swift in Sources */,
 				96C75DA3302A2648009FADE1 /* FireProspectApp.swift in Sources */,
 				A10000010000000000000001 /* Geography.swift in Sources */,
 				A10000020000000000000001 /* BundledGeographyRepository.swift in Sources */,
@@ -514,6 +522,7 @@
 				DEVELOPMENT_ASSET_PATHS = "\"FireProspect/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -538,6 +547,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

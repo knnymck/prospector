@@ -130,3 +130,14 @@ struct ProspectRowModel: Identifiable, Hashable, Sendable {
         relevanceScore = record.relevance.score
     }
 }
+
+struct PersonnelExtraction: Codable, Hashable, Sendable {
+    let people: [Person]
+
+    struct Person: Codable, Identifiable, Hashable, Sendable {
+        var id: String { [name, title, email].compactMap { $0 }.joined(separator: "|") }
+        let name: String?
+        let title: String?
+        let email: String?
+    }
+}

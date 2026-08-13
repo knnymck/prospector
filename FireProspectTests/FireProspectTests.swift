@@ -49,6 +49,25 @@ final class FireProspectTests: XCTestCase {
         XCTAssertTrue(csv.contains(CSVExporter.prospectSchemaVersion))
     }
 
+    func testKeywordExpansionBoundsAndDeduplicates() throws {
+        let expansion = try KeywordExpansion(
+            source: "Civil Engineering",
+            keywords: ["Civil Engineering", " civil engineering ", "Structural Engineers"]
+        )
+
+        XCTAssertEqual(expansion.keywords, ["Civil Engineering", "Structural Engineers"])
+        XCTAssertThrowsError(try KeywordExpansion(source: "Civil Engineering", keywords: ["1", "2", "3", "4", "5", "6"]))
+    }
+
+    func testKeywordExpansionFallbackPreservesInput() {
+        XCTAssertEqual(KeywordExpansion.fallback(for: "Civil Engineering").keywords, ["Civil Engineering"])
+    }
+
+    func testEnrichmentCandidateAndPageLimitsStayBounded() {
+        XCTAssertEqual(SiteLinkDiscoveryService.maximumCandidateCount, 30)
+        XCTAssertEqual(SitemapAvailability.httpOnly.rawValue, "HTTP-only sitemap")
+    }
+
     func testSafeFilenameRemovesPathCharacters() {
         XCTAssertEqual(
             CSVExporter.safeFilename(stem: "../../Civil / Engineering"),

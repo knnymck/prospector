@@ -56,7 +56,6 @@ struct ContentView: View {
     enum SidebarDestination: String, Identifiable {
         case search
         case prospects
-        case settings
 
         var id: String { rawValue }
 
@@ -66,8 +65,6 @@ struct ContentView: View {
                 "Search"
             case .prospects:
                 "Prospects"
-            case .settings:
-                "Settings"
             }
         }
 
@@ -77,8 +74,6 @@ struct ContentView: View {
                 "magnifyingglass"
             case .prospects:
                 "person.2"
-            case .settings:
-                "gearshape"
             }
         }
     }
@@ -94,34 +89,17 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView {
             VStack(alignment: .leading, spacing: 0) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("FIREPROSPECT")
-                        .font(.system(size: 12, weight: .black))
-                        .tracking(1)
-
-                    Text("SYS.VER 2.4")
-                        .font(.system(size: 8, weight: .bold, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .tracking(0.5)
-                }
-                .padding(.horizontal, 12)
-                .padding(.top, 12)
-                .padding(.bottom, 8)
-
                 List(selection: $selectedDestination) {
-                    Section("Workspace") {
+                    Section {
                         destinationRow(.search)
                         destinationRow(.prospects)
-                    }
-
-                    Section("Utility") {
-                        destinationRow(.settings)
                     }
                 }
                 .listStyle(.sidebar)
                 .accessibilityLabel("Application navigation")
                 .accessibilityIdentifier("sidebar.navigation")
             }
+            .navigationTitle("FireProspect")
             .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 280)
         } detail: {
             Group {
@@ -130,8 +108,6 @@ struct ContentView: View {
                     SearchTabView(searchResults: $searchResults)
                 case .prospects:
                     ProspectsView(searchResults: searchResults)
-                case .settings:
-                    SettingsTabView()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -143,9 +119,6 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .showProspectsDestination)) { _ in
             selectedDestination = .prospects
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .showSettingsDestination)) { _ in
-            selectedDestination = .settings
         }
         .frame(minWidth: 900, minHeight: 720)
         .background(Color(nsColor: .windowBackgroundColor))
@@ -175,6 +148,10 @@ struct SearchTabView: View {
     @State private var isSearching = false
     @State private var logOutput = "READY // Select target state and city vectors to initiate search cycle."
     @State private var progressText = ""
+    @State private var expansionStatus = "Keyword expansion has not run."
+    @State private var acceptedCount = 0
+    @State private var excludedCount = 0
+    @State private var warnings: [String] = []
     
     private var filteredStateSuggestions: [StateRecord] {
         allStates.filter { state in
@@ -196,6 +173,7 @@ struct SearchTabView: View {
                 categoryInputSection
                 geographyConnectorSection
                 metricsSection
+                searchStatusSection
                 systemLogSection
             }
             .padding(32)
@@ -212,30 +190,19 @@ struct SearchTabView: View {
     
     private var categoryInputSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("01 // SEARCH VECTOR / CATEGORY")
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .tracking(0.8)
+            Label("Business category", systemImage: "building.2")
+                .font(.headline)
             
-            TextField("E.G. CIVIL ENGINEERING, HEAVY CONTRACTING…", text: $category)
-                .textFieldStyle(.plain)
-                .font(.system(size: 12, weight: .regular, design: .default))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Color(nsColor: .controlBackgroundColor))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4)
-                        .strokeBorder(Color.primary.opacity(0.15), lineWidth: 1)
-                )
+            TextField("Civil Engineering", text: $category)
+                .textFieldStyle(.roundedBorder)
+                .controlSize(.large)
         }
     }
     
     private var geographyConnectorSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("02 // TARGET GEOGRAPHY (STATE & CITY CONNECTOR)")
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .tracking(0.8)
+            Label("Search area", systemImage: "map")
+                .font(.headline)
             
             HStack(alignment: .top, spacing: 20) {
                 targetStatesColumn
@@ -249,7 +216,7 @@ struct SearchTabView: View {
     private var targetStatesColumn: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("STEP A: SELECT STATE")
+                Text("States")
                     .font(.system(size: 9, weight: .bold, design: .monospaced))
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -259,7 +226,7 @@ struct SearchTabView: View {
             }
             
             VStack(spacing: 0) {
-                TextField("TYPE STATE NAME OR ABBREVIATION…", text: $stateSearch, onEditingChanged: { focused in
+                TextField("Search states", text: $stateSearch, onEditingChanged: { focused in
                     isStateDropdownFocused = focused
                 })
                 .textFieldStyle(.plain)
@@ -324,19 +291,19 @@ struct SearchTabView: View {
     private var targetCitiesColumn: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("STEP B: SELECT CITY")
+                Text("Cities")
                     .font(.system(size: 9, weight: .bold, design: .monospaced))
                     .foregroundStyle(.secondary)
                 
                 Spacer()
                 
-                Toggle("ALL CITIES IN STATE", isOn: $selectAllCities)
+                Toggle("All cities", isOn: $selectAllCities)
                     .toggleStyle(.checkbox)
                     .font(.system(size: 9, weight: .bold, design: .monospaced))
                     .disabled(selectedStates.isEmpty)
             }
             
-            TextField(selectedStates.isEmpty ? "SELECT A STATE FIRST TO LOAD CITIES…" : "FILTER CITIES…", text: $citySearch)
+            TextField(selectedStates.isEmpty ? "Select a state first" : "Search cities", text: $citySearch)
                 .textFieldStyle(.plain)
                 .font(.system(size: 11, design: .default))
                 .padding(.horizontal, 8)
@@ -402,12 +369,12 @@ struct SearchTabView: View {
     private var unifiedLocationPillsView: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("ACTIVE UNIFIED LOCATIONS:")
+                Text("Selected locations")
                     .font(.system(size: 8, weight: .bold, design: .monospaced))
                     .foregroundStyle(.secondary)
                 Spacer()
                 if selectAllCities {
-                    Text("[ ALL CITIES ACTIVE FOR SELECTED STATES ]")
+                    Text("All cities in selected states")
                         .font(.system(size: 8, weight: .bold, design: .monospaced))
                         .foregroundStyle(.secondary)
                 }
@@ -455,51 +422,31 @@ struct SearchTabView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("SCOPE RESOLUTION MATRIX")
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .tracking(0.8)
+                    Text("Ready to search")
+                        .font(.headline)
                     
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text("\(targetZips.count)")
                             .font(.system(size: 20, weight: .black, design: .monospaced))
                         
-                        Text("ZIP CODES IDENTIFIED")
-                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        Text("ZIP codes")
+                            .foregroundStyle(.secondary)
                     }
                     
                     Text(targetZips.isEmpty ?
-                         "⚠️ Select state(s) and city location(s) to calculate search targets." :
-                         "Metric displays total unique geographic ZIP code zones compiled from selected unified locations.")
-                        .font(.system(size: 10, design: .default))
+                         "Choose at least one state and city to define the search area." :
+                         "FireProspect will search the selected category across this area.")
+                        .font(.callout)
                         .foregroundStyle(.secondary)
                 }
                 
                 Spacer()
                 
                 Button(action: runMultiZipSearch) {
-                    HStack(spacing: 10) {
-                        if isSearching {
-                            ProgressView()
-                                .controlSize(.small)
-                        }
-                        Text(isSearching ? "EXECUTING GRID SEARCH…" : "EXECUTE SEARCH CYCLE")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .tracking(0.8)
-                    }
-                    .padding(.horizontal, 22)
-                    .padding(.vertical, 12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(canSearch ? Color.primary : Color.primary.opacity(0.08))
-                    )
-                    .foregroundStyle(canSearch ? Color(nsColor: .windowBackgroundColor) : Color.secondary)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .strokeBorder(canSearch ? Color.primary.opacity(0.2) : Color.clear, lineWidth: 1)
-                    )
+                    Label(isSearching ? "Searching…" : "Search Prospects", systemImage: "magnifyingglass")
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
                 .disabled(!canSearch)
             }
         }
@@ -514,10 +461,8 @@ struct SearchTabView: View {
     private var systemLogSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("04 // SYSTEM EXECUTION LOG")
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .tracking(0.8)
+                Text("Activity")
+                    .font(.headline)
                 
                 Spacer()
                 
@@ -528,17 +473,45 @@ struct SearchTabView: View {
                 }
             }
             
-            TextEditor(text: .constant(logOutput))
-                .font(.system(size: 10, design: .monospaced))
-                .scrollContentBackground(.hidden)
-                .padding(10)
-                .frame(height: 100)
-                .background(Color(nsColor: .textBackgroundColor))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4)
-                        .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
-                )
+            Text(logOutput)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private var searchStatusSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Search intelligence", systemImage: "sparkles")
+                .font(.headline)
+            Text(expansionStatus)
+            HStack {
+                Label("\(acceptedCount) accepted", systemImage: "checkmark.circle")
+                Label("\(excludedCount) excluded", systemImage: "minus.circle")
+            }
+            .foregroundStyle(.secondary)
+            if !warnings.isEmpty {
+                DisclosureGroup("\(warnings.count) warning\(warnings.count == 1 ? "" : "s")") {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(warnings, id: \.self) { warning in
+                                Label(warning, systemImage: "exclamationmark.triangle")
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: 120)
+                }
+                .foregroundStyle(.orange)
+            }
+        }
+        .font(.callout)
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.primary.opacity(0.03))
+        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.primary.opacity(0.12)))
+        .accessibilityIdentifier("search.expansion-status")
     }
     
     // MARK: - Actions & Logic
@@ -608,25 +581,50 @@ struct SearchTabView: View {
         isSearching = true
         logOutput = "INITIATING CYCLE // Targets: \(targetZips.count) ZIP codes…\n"
         progressText = ""
+        expansionStatus = "Checking and loading Gemma 4 2B…"
+        acceptedCount = 0
+        excludedCount = 0
+        warnings = []
         searchResults.removeAll()
         
         let apiKey = KeychainHelper.getKey()
         let zipsToSearch = targetZips
-        let cat = category
+        let cat = category.trimmingCharacters(in: .whitespacesAndNewlines)
         
         Task {
             let service = MapKitSearchService()
             var allResults: [ProspectID: ProspectCandidate] = [:]
             var processed = 0
+            var excluded = 0
+            var nonfatalWarnings: [String] = []
+            let expansion: KeywordExpansion
+            do {
+                expansion = try await LocalModelService.shared.expand(cat)
+            } catch {
+                expansion = .fallback(for: cat)
+                nonfatalWarnings.append("Keyword expansion unavailable; using the original category. \(error.localizedDescription)")
+            }
+
+            await MainActor.run {
+                self.expansionStatus = expansion.keywords.count == 1 && expansion.keywords[0] == cat
+                    ? "FALLBACK // \(cat)"
+                    : "EXPANDED // \(expansion.keywords.joined(separator: " • "))"
+            }
             
             for zip in zipsToSearch {
-                do {
-                    let results = try await service.searchZipCode(category: cat, zip: zip)
-                    for r in results {
-                        allResults[r.id] = r
+                for keyword in expansion.keywords {
+                    do {
+                        let results = try await service.searchZipCode(category: keyword, zip: zip)
+                        for result in results {
+                            if SemanticProspectPolicy.accepts(result) {
+                                allResults[result.id] = result
+                            } else {
+                                excluded += 1
+                            }
+                        }
+                    } catch {
+                        nonfatalWarnings.append("\(zip.id.rawValue) / \(keyword): \(error.localizedDescription)")
                     }
-                } catch {
-                    // Continue processing on individual ZIP errors
                 }
                 
                 processed += 1
@@ -637,6 +635,8 @@ struct SearchTabView: View {
                 await MainActor.run {
                     self.progressText = "[\(current)/\(total)]"
                     self.logOutput = "PROCESSING // \(current) of \(total) ZIPs resolved.\nDISCOVERED // \(foundCount) unique domain vectors."
+                    self.acceptedCount = foundCount
+                    self.excludedCount = excluded
                 }
                 
                 try? await Task.sleep(for: .milliseconds(300))
@@ -655,12 +655,16 @@ struct SearchTabView: View {
                 logBuffer += "STATUS // Firecrawl key validated. Ready for extraction sequence."
             }
             let finalLog = logBuffer
+            let displayedWarnings = Array(nonfatalWarnings.prefix(5))
             
             // Safely pass immutable `let` values to MainActor.run
             await MainActor.run {
                 self.searchResults = items
                 self.logOutput = finalLog
                 self.progressText = ""
+                self.acceptedCount = items.count
+                self.excludedCount = excluded
+                self.warnings = displayedWarnings
                 self.isSearching = false
             }
         }
@@ -674,6 +678,11 @@ struct SearchTabView: View {
 struct ProspectsView: View {
     let searchResults: [ProspectRecord]
     @State private var exportState: ExportState = .idle
+    @State private var enrichmentMessage: String?
+    @State private var isEnriching = false
+    @State private var selectedProspectID: ProspectID?
+    @State private var pendingProspect: ProspectRecord?
+    @State private var enrichmentReceipt: EnrichmentReceipt?
 
     private var rows: [ProspectRowModel] {
         searchResults.map(ProspectRowModel.init(record:))
@@ -695,12 +704,26 @@ struct ProspectsView: View {
                     Task { await exportResultsToCSV() }
                 }
                 .disabled(searchResults.isEmpty || exportState.isBusy)
+
+                Button("Test Enrichment (1 Page)", systemImage: "person.text.rectangle") {
+                    pendingProspect = selectedProspect
+                }
+                .disabled(selectedProspect == nil || isEnriching || KeychainHelper.getKey().isEmpty)
+                .help(KeychainHelper.getKey().isEmpty ? "Add a Firecrawl API key in Settings." : "Uses Firecrawl credit for exactly one selected page.")
             }
 
             if let message = exportState.message {
                 Text(message)
                     .font(.callout)
                     .foregroundStyle(exportState.isFailure ? Color.red : Color.secondary)
+            }
+
+            if let enrichmentMessage {
+                Text(enrichmentMessage)
+                    .font(.callout.monospaced())
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .accessibilityIdentifier("prospects.enrichment-status")
             }
 
             if rows.isEmpty {
@@ -711,7 +734,7 @@ struct ProspectsView: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                Table(rows) {
+                Table(rows, selection: $selectedProspectID) {
                     TableColumn("Business", value: \.name)
                     TableColumn("Address", value: \.address)
                     TableColumn("Phone", value: \.phone)
@@ -720,10 +743,60 @@ struct ProspectsView: View {
                     }
                 }
             }
+
+            if let receipt = enrichmentReceipt, !receipt.personnel.people.isEmpty {
+                GroupBox("Personnel from \(receipt.selectedURL.host() ?? receipt.selectedURL.absoluteString)") {
+                    Table(receipt.personnel.people) {
+                        TableColumn("Name") { Text($0.name ?? "—") }
+                        TableColumn("Title") { Text($0.title ?? "—") }
+                        TableColumn("Email") { Text($0.email ?? "—").textSelection(.enabled) }
+                    }
+                    .frame(minHeight: 120)
+                }
+            }
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .accessibilityIdentifier("detail.prospects")
+        .alert("Use one Firecrawl extraction credit?", isPresented: Binding(
+            get: { pendingProspect != nil },
+            set: { if !$0 { pendingProspect = nil } }
+        ), presenting: pendingProspect) { prospect in
+            Button("Cancel", role: .cancel) { pendingProspect = nil }
+            Button("Extract One Page") {
+                pendingProspect = nil
+                Task { await enrich(prospect) }
+            }
+        } message: { prospect in
+            Text("Gemma will choose one personnel page for \(prospect.name). Only that page will be submitted to Firecrawl.")
+        }
+    }
+
+    private var selectedProspect: ProspectRecord? {
+        searchResults.first { $0.id == selectedProspectID }
+    }
+
+    @MainActor
+    private func enrich(_ prospect: ProspectRecord) async {
+        isEnriching = true
+        enrichmentMessage = "FREE DISCOVERY // Checking HTTPS and HTTP sitemap availability…"
+        do {
+            let receipt = try await SiteEnrichmentService.shared.enrichOnePage(
+                website: prospect.websiteURL,
+                apiKey: KeychainHelper.getKey()
+            )
+            enrichmentMessage = """
+            COMPLETE // Exactly 1 page submitted to Firecrawl extract
+            SITEMAP // \(receipt.discovery.sitemapAvailability.rawValue)
+            DISCOVERY // \(receipt.usedFirecrawlMap ? "Firecrawl map fallback" : "Native Swift")
+            SELECTED // \(receipt.selectedURL.absoluteString)
+            PEOPLE // \(receipt.personnel.people.count)
+            """
+            enrichmentReceipt = receipt
+        } catch {
+            enrichmentMessage = "NONFATAL FAILURE // \(error.localizedDescription)"
+        }
+        isEnriching = false
     }
 
     @MainActor
@@ -820,62 +893,44 @@ struct RemovablePill: View {
 
 struct SettingsTabView: View {
     @State private var firecrawlKey: String = ""
-    @State private var saveMessage: String = ""
+    @State private var firecrawlMessage: String = ""
+    @State private var localModelMessage: String = ""
+    @State private var modelIdentifier = LocalModelService.configuredModel
+    @State private var localModelAvailability: LocalModelAvailability = .checking
     
     var body: some View {
         VStack(alignment: .leading, spacing: 32) {
             VStack(alignment: .leading, spacing: 20) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("01 // FIRECRAWL API AUTHENTICATION")
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .tracking(0.8)
+                    Label("Firecrawl", systemImage: "key")
+                        .font(.title3.weight(.semibold))
                     
                     Text("Required credential for automated site crawling and structured domain parsing.")
-                        .font(.system(size: 11, design: .default))
+                        .font(.callout)
                         .foregroundStyle(.secondary)
                 }
                 
-                SecureField("FC-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX", text: $firecrawlKey)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 11, design: .monospaced))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Color(nsColor: .controlBackgroundColor))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 4)
-                            .strokeBorder(Color.primary.opacity(0.15), lineWidth: 1)
-                    )
+                SecureField("API key", text: $firecrawlKey)
+                    .textFieldStyle(.roundedBorder)
                 
                 HStack(spacing: 16) {
                     Button(action: {
                         KeychainHelper.saveKey(firecrawlKey)
-                        saveMessage = "CREDENTIALS STORED TO SYSTEM KEYCHAIN"
-                        
-                        Task {
-                            try? await Task.sleep(for: .seconds(2.5))
-                            await MainActor.run { saveMessage = "" }
-                        }
+                        firecrawlMessage = "Configured — credential stored in Keychain."
                     }) {
-                        Text("SAVE CREDENTIALS")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .tracking(0.8)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .background(
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(Color.primary)
-                            )
-                            .foregroundStyle(Color(nsColor: .windowBackgroundColor))
+                        Text("Save API Key")
                     }
-                    .buttonStyle(.plain)
-                    
-                    if !saveMessage.isEmpty {
-                        Text(saveMessage)
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .transition(.opacity)
+                    .buttonStyle(.borderedProminent)
+                    Button("Remove", role: .destructive) {
+                        _ = KeychainHelper.deleteKey()
+                        firecrawlKey = ""
+                        firecrawlMessage = "Credential removed."
                     }
+                    .disabled(firecrawlKey.isEmpty)
+                }
+                if !firecrawlMessage.isEmpty {
+                    Text(firecrawlMessage).font(.callout).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("settings.firecrawl-message")
                 }
             }
             .padding(24)
@@ -885,14 +940,80 @@ struct SettingsTabView: View {
                 RoundedRectangle(cornerRadius: 6)
                     .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
             )
+
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Local AI model", systemImage: "cpu")
+                    .font(.title3.weight(.semibold))
+                Label(localModelAvailability.label, systemImage: localModelAvailability == .ready ? "checkmark.circle.fill" : "cpu")
+                    .foregroundStyle(localModelAvailability == .ready ? Color.green : Color.secondary)
+                    .accessibilityIdentifier("settings.local-model-status")
+                Text("Keyword generation requires Gemma 4 2B through the local Ollama runtime. Model installation is optional; searches safely fall back to the original category.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                TextField("Ollama model tag", text: $modelIdentifier)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit { saveModelIdentifier() }
+                if localModelAvailability == .runtimeUnavailable {
+                    Text("Install and launch Ollama on this Mac, then choose Check Again. FireProspect cannot install the Ollama application itself.")
+                        .font(.callout).foregroundStyle(.orange)
+                }
+                HStack {
+                    Button("Check Again") { Task { await refreshLocalModel() } }
+                    Button("Save Model Tag") { saveModelIdentifier() }
+                    Button("Install Model") { Task { await installLocalModel() } }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(localModelAvailability == .ready || localModelAvailability == .runtimeUnavailable || isInstallingModel)
+                }
+                if !localModelMessage.isEmpty {
+                    Text(localModelMessage).font(.callout).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("settings.local-model-message")
+                }
+            }
+            .padding(24)
+            .frame(maxWidth: 520, alignment: .leading)
+            .background(Color.primary.opacity(0.02))
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.primary.opacity(0.12)))
             
             Spacer()
         }
-        .padding(32)
+        .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .accessibilityIdentifier("detail.settings")
         .onAppear {
             firecrawlKey = KeychainHelper.getKey()
+            firecrawlMessage = firecrawlKey.isEmpty ? "Not configured." : "Configured in Keychain."
+            Task { await refreshLocalModel() }
+        }
+    }
+
+    private var isInstallingModel: Bool {
+        if case .installing = localModelAvailability { return true }
+        return false
+    }
+
+    private func saveModelIdentifier() {
+        LocalModelService.configure(model: modelIdentifier)
+        localModelMessage = "Model tag saved. Check availability before installing."
+        Task { await refreshLocalModel() }
+    }
+
+    @MainActor
+    private func refreshLocalModel() async {
+        localModelAvailability = .checking
+        localModelAvailability = await LocalModelService.shared.availability()
+    }
+
+    @MainActor
+    private func installLocalModel() async {
+        localModelAvailability = .installing(nil)
+        do {
+            try await LocalModelService.shared.ensureInstalled { progress in
+                await MainActor.run { self.localModelAvailability = .installing(progress) }
+            }
+            localModelAvailability = .ready
+        } catch {
+            localModelAvailability = await LocalModelService.shared.availability()
+            localModelMessage = error.localizedDescription
         }
     }
 }
