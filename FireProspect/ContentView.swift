@@ -50,74 +50,102 @@ struct FlowLayout: Layout {
 // MARK: - Root Application Window
 
 struct ContentView: View {
-    @State private var activeTab: AppTab = .search
-    
-    enum AppTab: String, CaseIterable {
-        case search = "GRID SEARCH"
-        case settings = "SETTINGS"
+    @State private var selectedDestination: SidebarDestination? = .search
+    @State private var searchResults: [ProspectRecord] = []
+
+    enum SidebarDestination: String, Identifiable {
+        case search
+        case prospects
+        case settings
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .search:
+                "Search"
+            case .prospects:
+                "Prospects"
+            case .settings:
+                "Settings"
+            }
+        }
+
+        var systemImage: String {
+            switch self {
+            case .search:
+                "magnifyingglass"
+            case .prospects:
+                "person.2"
+            case .settings:
+                "gearshape"
+            }
+        }
     }
-    
+
+    @ViewBuilder
+    private func destinationRow(_ destination: SidebarDestination) -> some View {
+        Label(destination.title, systemImage: destination.systemImage)
+            .tag(destination)
+            .accessibilityLabel(destination.title)
+            .accessibilityIdentifier("sidebar.destination.\(destination.rawValue)")
+    }
+
     var body: some View {
-        VStack(spacing: 0) {
-            // Header / Navigation Bar
-            HStack(alignment: .center, spacing: 32) {
+        NavigationSplitView {
+            VStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("FIREPROSPECT")
-                        .font(.system(size: 14, weight: .black, design: .default))
-                        .tracking(1.2)
-                    
-                    Text("SYS.VER 2.4 // REGIONAL DOMAIN ENGINE")
+                        .font(.system(size: 12, weight: .black))
+                        .tracking(1)
+
+                    Text("SYS.VER 2.4")
                         .font(.system(size: 8, weight: .bold, design: .monospaced))
                         .foregroundStyle(.secondary)
-                        .tracking(0.6)
+                        .tracking(0.5)
                 }
-                
-                Spacer()
-                
-                HStack(spacing: 8) {
-                    ForEach(AppTab.allCases, id: \.self) { tab in
-                        Button(action: {
-                            withAnimation(.easeInOut(duration: 0.15)) {
-                                activeTab = tab
-                            }
-                        }) {
-                            Text(tab.rawValue)
-                                .font(.system(size: 10, weight: activeTab == tab ? .bold : .medium, design: .monospaced))
-                                .tracking(0.8)
-                                .foregroundStyle(activeTab == tab ? Color.primary : Color.secondary)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 7)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .fill(activeTab == tab ? Color.primary.opacity(0.12) : Color.primary.opacity(0.03))
-                                )
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .strokeBorder(activeTab == tab ? Color.primary.opacity(0.25) : Color.primary.opacity(0.08), lineWidth: 1)
-                                )
-                        }
-                        .buttonStyle(.plain)
+                .padding(.horizontal, 12)
+                .padding(.top, 12)
+                .padding(.bottom, 8)
+
+                List(selection: $selectedDestination) {
+                    Section("Workspace") {
+                        destinationRow(.search)
+                        destinationRow(.prospects)
+                    }
+
+                    Section("Utility") {
+                        destinationRow(.settings)
                     }
                 }
+                .listStyle(.sidebar)
+                .accessibilityLabel("Application navigation")
+                .accessibilityIdentifier("sidebar.navigation")
             }
-            .padding(.horizontal, 32)
-            .padding(.top, 20)
-            .padding(.bottom, 16)
-            .background(Color(nsColor: .windowBackgroundColor))
-            
-            Rectangle()
-                .fill(Color.primary.opacity(0.12))
-                .frame(height: 1)
-            
+            .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 280)
+        } detail: {
             Group {
-                switch activeTab {
+                switch selectedDestination ?? .search {
                 case .search:
-                    SearchTabView()
+                    SearchTabView(searchResults: $searchResults)
+                case .prospects:
+                    ProspectsView(searchResults: searchResults)
                 case .settings:
                     SettingsTabView()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color(nsColor: .windowBackgroundColor))
+            .navigationTitle((selectedDestination ?? .search).title)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .showSearchDestination)) { _ in
+            selectedDestination = .search
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .showProspectsDestination)) { _ in
+            selectedDestination = .prospects
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .showSettingsDestination)) { _ in
+            selectedDestination = .settings
         }
         .frame(minWidth: 900, minHeight: 720)
         .background(Color(nsColor: .windowBackgroundColor))
@@ -127,6 +155,7 @@ struct ContentView: View {
 // MARK: - Search Tab View
 
 struct SearchTabView: View {
+    @Binding var searchResults: [ProspectRecord]
     @State private var category: String = "Civil Engineering"
     
     // Unified State & City selection state
@@ -146,9 +175,6 @@ struct SearchTabView: View {
     @State private var isSearching = false
     @State private var logOutput = "READY // Select target state and city vectors to initiate search cycle."
     @State private var progressText = ""
-    @State private var searchResults: [ProspectRecord] = []
-    @State private var exportState: ExportState = .idle
-    @State private var exportHistory: [CSVExporter.Receipt] = []
     
     private var filteredStateSuggestions: [StateRecord] {
         allStates.filter { state in
@@ -170,12 +196,12 @@ struct SearchTabView: View {
                 categoryInputSection
                 geographyConnectorSection
                 metricsSection
-                resultsTableSection
                 systemLogSection
             }
             .padding(32)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .accessibilityIdentifier("detail.search")
         .task { await loadGeography() }
         .task(id: selectedStates) { await refreshCitiesAndZIPs() }
         .task(id: citySearch) { await refreshCities() }
@@ -485,183 +511,6 @@ struct SearchTabView: View {
         )
     }
     
-    // MARK: - Prospect Results Table Component (Responsive Responsive Grid)
-    
-    private var resultsTableSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .center) {
-                Text("03 // DISCOVERED PROSPECTS (\(searchResults.count))")
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .tracking(0.8)
-                
-                Spacer()
-                
-                // CSV Export Button
-                Button { Task { await exportResultsToCSV() } } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "square.and.arrow.down")
-                            .font(.system(size: 9, weight: .bold))
-                        Text("EXPORT CSV")
-                            .font(.system(size: 9, weight: .bold, design: .monospaced))
-                            .tracking(0.6)
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(searchResults.isEmpty ? Color.primary.opacity(0.04) : Color.primary.opacity(0.1))
-                    )
-                    .foregroundStyle(searchResults.isEmpty ? Color.secondary.opacity(0.5) : Color.primary)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 4)
-                            .strokeBorder(searchResults.isEmpty ? Color.clear : Color.primary.opacity(0.2), lineWidth: 1)
-                    )
-                }
-                .buttonStyle(.plain)
-                .disabled(searchResults.isEmpty || exportState.isBusy)
-            }
-
-            if let exportMessage = exportState.message {
-                Text(exportMessage)
-                    .font(.system(size: 9, design: .monospaced))
-                    .foregroundStyle(exportState.isFailure ? Color.red : Color.secondary)
-            }
-            
-            if searchResults.isEmpty {
-                VStack(spacing: 6) {
-                    Text("NO ACTIVE PROSPECT RESULTS")
-                        .font(.system(size: 11, weight: .bold, design: .monospaced))
-                        .foregroundStyle(.tertiary)
-                    Text("Execute a search cycle to populate prospect business details, phone numbers, and addresses.")
-                        .font(.system(size: 10, design: .default))
-                        .foregroundStyle(.tertiary)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 32)
-                .background(Color(nsColor: .controlBackgroundColor))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4)
-                        .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
-                )
-            } else {
-                VStack(spacing: 0) {
-                    // Fully Responsive Table Header Row
-                    HStack(spacing: 12) {
-                        Text("#")
-                            .font(.system(size: 8, weight: .bold, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 32, alignment: .leading)
-                        
-                        Text("BUSINESS NAME")
-                            .font(.system(size: 8, weight: .bold, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .frame(minWidth: 140, maxWidth: .infinity, alignment: .leading)
-                        
-                        Text("ADDRESS")
-                            .font(.system(size: 8, weight: .bold, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .frame(minWidth: 180, maxWidth: .infinity, alignment: .leading)
-                        
-                        Text("PHONE")
-                            .font(.system(size: 8, weight: .bold, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 110, alignment: .leading)
-                        
-                        Text("WEBSITE URL")
-                            .font(.system(size: 8, weight: .bold, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .frame(minWidth: 140, maxWidth: .infinity, alignment: .leading)
-                        
-                        Text("ACTIONS")
-                            .font(.system(size: 8, weight: .bold, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 60, alignment: .trailing)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Color.primary.opacity(0.06))
-                    
-                    Divider()
-                    
-                    // Fully Responsive Table Content Rows
-                    ScrollView {
-                        LazyVStack(spacing: 0) {
-                            ForEach(Array(resultRows.enumerated()), id: \.element.id) { index, item in
-                                HStack(spacing: 12) {
-                                    Text("\(index + 1)")
-                                        .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                        .foregroundStyle(.secondary)
-                                        .frame(width: 32, alignment: .leading)
-                                    
-                                    Text(item.name.isEmpty ? "N/A" : item.name)
-                                        .font(.system(size: 11, weight: .semibold, design: .default))
-                                        .lineLimit(1)
-                                        .frame(minWidth: 140, maxWidth: .infinity, alignment: .leading)
-                                    
-                                    Text(item.address)
-                                        .font(.system(size: 10, design: .default))
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
-                                        .frame(minWidth: 180, maxWidth: .infinity, alignment: .leading)
-                                    
-                                    Text(item.phone.isEmpty ? "N/A" : item.phone)
-                                        .font(.system(size: 10, design: .monospaced))
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
-                                        .frame(width: 110, alignment: .leading)
-                                    
-                                    Group {
-                                        Link(destination: item.websiteURL) {
-                                            HStack(spacing: 4) {
-                                                Text(item.websiteURL.absoluteString)
-                                                    .lineLimit(1)
-                                                    .underline()
-                                                Image(systemName: "arrow.up.right.square")
-                                                    .font(.system(size: 8))
-                                            }
-                                            .font(.system(size: 10, design: .monospaced))
-                                            .foregroundStyle(Color.accentColor)
-                                        }
-                                    }
-                                    .frame(minWidth: 140, maxWidth: .infinity, alignment: .leading)
-                                    
-                                    HStack(spacing: 8) {
-                                        Button(action: {
-                                            NSPasteboard.general.clearContents()
-                                            NSPasteboard.general.setString(item.phone, forType: .string)
-                                        }) {
-                                            Image(systemName: "doc.on.doc")
-                                                .font(.system(size: 9))
-                                                .foregroundStyle(.secondary)
-                                        }
-                                        .buttonStyle(.plain)
-                                        .help("Copy Phone Number")
-                                        .disabled(item.phone.isEmpty || item.phone == "N/A")
-                                    }
-                                    .frame(width: 60, alignment: .trailing)
-                                }
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 8)
-                                .background(index % 2 == 0 ? Color.clear : Color.primary.opacity(0.02))
-                                
-                                Divider()
-                            }
-                        }
-                    }
-                    .frame(maxHeight: 280)
-                }
-                .frame(maxWidth: .infinity)
-                .background(Color(nsColor: .controlBackgroundColor))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4)
-                        .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
-                )
-            }
-        }
-        .frame(maxWidth: .infinity)
-    }
-    
     private var systemLogSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
@@ -817,8 +666,64 @@ struct SearchTabView: View {
         }
     }
     
-    private var resultRows: [ProspectRowModel] {
+
+}
+
+// MARK: - Prospects
+
+struct ProspectsView: View {
+    let searchResults: [ProspectRecord]
+    @State private var exportState: ExportState = .idle
+
+    private var rows: [ProspectRowModel] {
         searchResults.map(ProspectRowModel.init(record:))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Prospects")
+                        .font(.title2.weight(.semibold))
+                    Text("\(searchResults.count) results from the current search")
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Button("Export CSV", systemImage: "square.and.arrow.down") {
+                    Task { await exportResultsToCSV() }
+                }
+                .disabled(searchResults.isEmpty || exportState.isBusy)
+            }
+
+            if let message = exportState.message {
+                Text(message)
+                    .font(.callout)
+                    .foregroundStyle(exportState.isFailure ? Color.red : Color.secondary)
+            }
+
+            if rows.isEmpty {
+                ContentUnavailableView(
+                    "No Prospects",
+                    systemImage: "person.2",
+                    description: Text("Run a search to populate this workspace.")
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                Table(rows) {
+                    TableColumn("Business", value: \.name)
+                    TableColumn("Address", value: \.address)
+                    TableColumn("Phone", value: \.phone)
+                    TableColumn("Website") { row in
+                        Link(row.websiteURL.host() ?? row.websiteURL.absoluteString, destination: row.websiteURL)
+                    }
+                }
+            }
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .accessibilityIdentifier("detail.prospects")
     }
 
     @MainActor
@@ -828,12 +733,11 @@ struct SearchTabView: View {
 
         let panel = NSSavePanel()
         panel.title = "Export Prospects to CSV"
-        panel.nameFieldStringValue = CSVExporter.safeFilename(stem: category)
+        panel.nameFieldStringValue = CSVExporter.safeFilename(stem: "current-search")
         panel.allowedContentTypes = [.commaSeparatedText]
         let response = await panel.beginResponse()
         guard response == .OK, let destination = panel.url else {
             exportState = .cancelled
-            logOutput = "EXPORT CANCELLED // Current search results remain available."
             return
         }
 
@@ -843,12 +747,9 @@ struct SearchTabView: View {
             let receipt = try await Task.detached {
                 try CSVExporter().exportProspects(records, to: destination)
             }.value
-            exportHistory.append(receipt)
             exportState = .succeeded(receipt)
-            logOutput = "EXPORT COMPLETE // Saved \(records.count) prospects to \(destination.lastPathComponent)."
         } catch {
             exportState = .failed(error.localizedDescription)
-            logOutput = "EXPORT FAILED // \(error.localizedDescription) Current search results remain available."
         }
     }
 
@@ -870,11 +771,11 @@ struct SearchTabView: View {
         var message: String? {
             switch self {
             case .idle: nil
-            case .choosingDestination: "EXPORT // Waiting for a save destination…"
-            case .exporting: "EXPORT // Writing UTF-8 CSV…"
-            case .succeeded(let receipt): "EXPORT // Saved \(receipt.rowCount) rows to \(receipt.destination.lastPathComponent)"
-            case .cancelled: "EXPORT // Save cancelled; results were retained."
-            case .failed(let reason): "EXPORT ERROR // \(reason) Results were retained."
+            case .choosingDestination: "Waiting for a save destination…"
+            case .exporting: "Exporting prospects…"
+            case .succeeded(let receipt): "Saved \(receipt.rowCount) prospects to \(receipt.destination.lastPathComponent)."
+            case .cancelled: "Export cancelled."
+            case .failed(let reason): "Export failed: \(reason)"
             }
         }
 
@@ -883,7 +784,6 @@ struct SearchTabView: View {
             return false
         }
     }
-
 }
 
 // MARK: - Reusable Removable Pill Component
@@ -990,6 +890,7 @@ struct SettingsTabView: View {
         }
         .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .accessibilityIdentifier("detail.settings")
         .onAppear {
             firecrawlKey = KeychainHelper.getKey()
         }
