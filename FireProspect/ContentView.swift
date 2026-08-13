@@ -631,12 +631,13 @@ struct SearchTabView: View {
                 let current = processed
                 let total = zipsToSearch.count
                 let foundCount = allResults.count
+                let excludedSoFar = excluded
                 
                 await MainActor.run {
                     self.progressText = "[\(current)/\(total)]"
                     self.logOutput = "PROCESSING // \(current) of \(total) ZIPs resolved.\nDISCOVERED // \(foundCount) unique domain vectors."
                     self.acceptedCount = foundCount
-                    self.excludedCount = excluded
+                    self.excludedCount = excludedSoFar
                 }
                 
                 try? await Task.sleep(for: .milliseconds(300))
@@ -656,6 +657,7 @@ struct SearchTabView: View {
             }
             let finalLog = logBuffer
             let displayedWarnings = Array(nonfatalWarnings.prefix(5))
+            let finalExcluded = excluded
             
             // Safely pass immutable `let` values to MainActor.run
             await MainActor.run {
@@ -663,7 +665,7 @@ struct SearchTabView: View {
                 self.logOutput = finalLog
                 self.progressText = ""
                 self.acceptedCount = items.count
-                self.excludedCount = excluded
+                self.excludedCount = finalExcluded
                 self.warnings = displayedWarnings
                 self.isSearching = false
             }
