@@ -71,9 +71,9 @@ struct CSVExporter: Sendable {
                     Self.prospectSchemaVersion, formatter.string(from: exportedAt.rawValue), record.id.rawValue,
                     record.name, record.address.street ?? "", record.address.city ?? "", record.address.state ?? "",
                     record.address.postalCode ?? "", record.phoneNumber ?? "", record.websiteURL.absoluteString,
-                    record.crawlStatus.rawValue, record.relevance.score.map(String.init) ?? "",
+                    record.crawlStatus.rawValue, record.relevance.score.map { "\($0)" } ?? "",
                     source?.source.rawValue ?? "", source?.query ?? "",
-                    source.map { formatter.string(from: $0.discoveredAt.rawValue) } ?? ""
+                    source.map { formatter.string(from: $0.discoveredAt.rawValue) } ?? "",
                 ])
             }
         }
