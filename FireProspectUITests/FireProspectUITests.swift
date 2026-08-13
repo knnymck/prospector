@@ -1,41 +1,61 @@
-//
-//  FireProspectUITests.swift
-//  FireProspectUITests
-//
-//  Created by Work on 8/10/26.
-//
-
 import XCTest
 
 final class FireProspectUITests: XCTestCase {
+    private var app: XCUIApplication!
 
     override func setUpWithError() throws {
-        // Put setup code here. This method is called before the invocation of each test method in the class.
-
-        // In UI tests it is usually best to stop immediately when a failure occurs.
         continueAfterFailure = false
-
-        // In UI tests it’s important to set the initial state - such as interface orientation - required for your tests before they run. The setUp method is a good place to do this.
+        app = XCUIApplication()
+        app.launch()
     }
 
-    override func tearDownWithError() throws {
-        // Put teardown code here. This method is called after the invocation of each test method in the class.
+    func testSidebarNavigatesToEveryDestination() {
+        let sidebar = app.descendants(matching: .any)["sidebar.navigation"]
+        XCTAssertTrue(sidebar.waitForExistence(timeout: 5), "The navigation sidebar should be visible after launch.")
+
+        assertDestination("search", label: "Search", detailIdentifier: "detail.search")
+        assertDestination("prospects", label: "Prospects", detailIdentifier: "detail.prospects")
+        assertDestination("settings", label: "Settings", detailIdentifier: "detail.settings")
     }
 
-    func testExample() throws {
-        // UI tests must launch the application that they test.
-        let app = XCUIApplication()
+    func testSidebarDestinationsExposeReadableAccessibilityLabels() {
+        for destination in ["Search", "Prospects", "Settings"] {
+            let row = app.descendants(matching: .any)["sidebar.destination.\(destination.lowercased())"]
+            XCTAssertTrue(row.waitForExistence(timeout: 5))
+            XCTAssertEqual(row.label, destination)
+            XCTAssertTrue(row.isHittable, "\(destination) should remain an actionable standard sidebar row.")
+        }
+    }
+
+    func testSidebarLabelsAtAccessibilityTextSize() {
+        app.terminate()
+        app = XCUIApplication()
+        app.launchEnvironment["UI_TEST_ACCESSIBILITY_TEXT_SIZE"] = "1"
         app.launch()
 
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
+        for destination in ["search", "prospects", "settings"] {
+            let row = app.descendants(matching: .any)["sidebar.destination.\(destination)"]
+            XCTAssertTrue(row.waitForExistence(timeout: 5))
+            XCTAssertTrue(row.isHittable, "\(destination) should remain readable and actionable at an accessibility text size.")
+        }
     }
 
-    func testLaunchPerformance() throws {
-        if #available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 7.0, *) {
-            // This measures how long it takes to launch your application.
-            measure(metrics: [XCTApplicationLaunchMetric()]) {
-                XCUIApplication().launch()
-            }
-        }
+    func testKeyboardCommandsSwitchDestinations() {
+        app.typeKey("2", modifierFlags: .command)
+        XCTAssertTrue(app.descendants(matching: .any)["detail.prospects"].waitForExistence(timeout: 5))
+
+        app.typeKey(",", modifierFlags: .command)
+        XCTAssertTrue(app.descendants(matching: .any)["detail.settings"].waitForExistence(timeout: 5))
+
+        app.typeKey("1", modifierFlags: .command)
+        XCTAssertTrue(app.descendants(matching: .any)["detail.search"].waitForExistence(timeout: 5))
+    }
+
+    private func assertDestination(_ identifier: String, label: String, detailIdentifier: String) {
+        let row = app.descendants(matching: .any)["sidebar.destination.\(identifier)"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        XCTAssertEqual(row.label, label)
+        row.click()
+        XCTAssertTrue(app.descendants(matching: .any)[detailIdentifier].waitForExistence(timeout: 5))
     }
 }
