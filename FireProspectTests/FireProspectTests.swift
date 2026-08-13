@@ -85,6 +85,17 @@ final class FireProspectTests: XCTestCase {
         XCTAssertEqual(city.displayName, "San Francisco, California")
     }
 
+    func testBundledStateAbbreviationsResolveToFullNames() {
+        XCTAssertEqual(
+            BundledGeographyRepository.displayName(for: StateID(rawValue: "CA"), fallback: "CA"),
+            "California"
+        )
+        XCTAssertEqual(
+            BundledGeographyRepository.displayName(for: StateID(rawValue: "PR"), fallback: "PR"),
+            "Puerto Rico"
+        )
+    }
+
     func testSearchHistoryRoundTripsNewestFirst() throws {
         let destination = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
