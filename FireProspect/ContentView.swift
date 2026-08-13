@@ -55,11 +55,13 @@ struct ContentView: View {
     @State private var searchHistory = SearchHistoryStore.load()
     @State private var currentKeywords: [String] = []
     @State private var currentLocations: [String] = []
+    @State private var isSearchesExpanded = true
+    @State private var expandedSearchDays: Set<Date> = []
 
     enum SidebarDestination: Hashable, Identifiable {
         case home
         case search
-        case prospects
+        case searches
         case settings
         case history(UUID)
 
@@ -69,7 +71,7 @@ struct ContentView: View {
             switch self {
             case .home: "home"
             case .search: "search"
-            case .prospects: "prospects"
+            case .searches: "searches"
             case .settings: "settings"
             case .history(let id): "history.\(id.uuidString)"
             }
@@ -80,9 +82,9 @@ struct ContentView: View {
             case .home:
                 "Home"
             case .search:
-                "Search"
-            case .prospects:
-                "Prospects"
+                "New Search"
+            case .searches:
+                "Searches"
             case .settings:
                 "Settings"
             case .history(let id):
@@ -96,8 +98,8 @@ struct ContentView: View {
                 "house"
             case .search:
                 "magnifyingglass"
-            case .prospects:
-                "person.2"
+            case .searches:
+                "clock.arrow.circlepath"
             case .settings:
                 "gearshape"
             case .history:
@@ -111,6 +113,14 @@ struct ContentView: View {
         return searchHistory.first { $0.id == id }
     }
 
+    private var historyByDay: [(day: Date, entries: [SearchHistoryEntry])] {
+        Dictionary(grouping: searchHistory) { Calendar.current.startOfDay(for: $0.searchedAt) }
+            .map { (day: $0.key, entries: $0.value.sorted { $0.searchedAt > $1.searchedAt }) }
+            .sorted { $0.day > $1.day }
+    }
+
+    private var latestHistory: SearchHistoryEntry? { searchHistory.first }
+
     private func recordSearch(_ results: [ProspectRecord], keywords: [String], locations: [String]) {
         let entry = SearchHistoryEntry(results: results, keywords: keywords, locations: locations)
         searchHistory.insert(entry, at: 0)
@@ -119,6 +129,8 @@ struct ContentView: View {
         currentKeywords = keywords
         currentLocations = locations
         selectedDestination = .history(entry.id)
+        isSearchesExpanded = true
+        expandedSearchDays.insert(Calendar.current.startOfDay(for: entry.searchedAt))
     }
 
     @ViewBuilder
@@ -136,7 +148,39 @@ struct ContentView: View {
                     Section {
                         destinationRow(.home)
                         destinationRow(.search)
-                        destinationRow(.prospects)
+                        DisclosureGroup(isExpanded: $isSearchesExpanded) {
+                            if searchHistory.isEmpty {
+                                Text("No search history")
+                                    .foregroundStyle(.secondary)
+                                    .accessibilityIdentifier("sidebar.searches.empty")
+                            } else {
+                                ForEach(historyByDay, id: \.day) { group in
+                                    DisclosureGroup(
+                                        isExpanded: Binding(
+                                            get: { expandedSearchDays.contains(group.day) },
+                                            set: { isExpanded in
+                                                if isExpanded {
+                                                    expandedSearchDays.insert(group.day)
+                                                } else {
+                                                    expandedSearchDays.remove(group.day)
+                                                }
+                                            }
+                                        )
+                                    ) {
+                                        ForEach(group.entries) { entry in
+                                            Label(entry.searchedAt.formatted(date: .omitted, time: .shortened), systemImage: "magnifyingglass")
+                                                .tag(SidebarDestination.history(entry.id))
+                                                .accessibilityLabel("Search at \(entry.searchedAt.formatted(date: .complete, time: .shortened))")
+                                                .accessibilityIdentifier("sidebar.history.\(entry.id.uuidString)")
+                                        }
+                                    } label: {
+                                        Text(group.day.formatted(date: .complete, time: .omitted))
+                                    }
+                                }
+                            }
+                        } label: {
+                            destinationRow(.searches)
+                        }
                     }
                 }
                 .listStyle(.sidebar)
@@ -172,8 +216,12 @@ struct ContentView: View {
                     }
                 case .search:
                     SearchTabView(searchResults: $searchResults, onSearchCompleted: recordSearch)
-                case .prospects:
-                    ProspectsView(searchResults: searchResults, keywords: currentKeywords, locations: currentLocations)
+                case .searches:
+                    ProspectsView(
+                        searchResults: latestHistory?.results ?? searchResults,
+                        keywords: latestHistory?.keywords ?? currentKeywords,
+                        locations: latestHistory?.locations ?? currentLocations
+                    )
                 case .settings:
                     SettingsTabView()
                 case .history:
@@ -194,8 +242,9 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .showSearchDestination)) { _ in
             selectedDestination = .search
         }
-        .onReceive(NotificationCenter.default.publisher(for: .showProspectsDestination)) { _ in
-            selectedDestination = .prospects
+        .onReceive(NotificationCenter.default.publisher(for: .showSearchesDestination)) { _ in
+            selectedDestination = .searches
+            isSearchesExpanded = true
         }
         .frame(minWidth: 900, minHeight: 720)
         .background(AppBackground())

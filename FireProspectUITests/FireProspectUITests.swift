@@ -14,14 +14,14 @@ final class FireProspectUITests: XCTestCase {
         XCTAssertTrue(sidebar.waitForExistence(timeout: 5), "The navigation sidebar should be visible after launch.")
 
         assertDestination("home", label: "Home", detailIdentifier: "detail.home")
-        assertDestination("search", label: "Search", detailIdentifier: "detail.search")
-        assertDestination("prospects", label: "Prospects", detailIdentifier: "detail.prospects")
+        assertDestination("search", label: "New Search", detailIdentifier: "detail.search")
+        assertDestination("searches", label: "Searches", detailIdentifier: "detail.prospects")
         assertDestination("settings", label: "Settings", detailIdentifier: "detail.settings")
     }
 
     func testSidebarDestinationsExposeReadableAccessibilityLabels() {
-        for destination in ["Home", "Search", "Prospects", "Settings"] {
-            let row = app.descendants(matching: .any)["sidebar.destination.\(destination.lowercased())"]
+        for (destination, identifier) in [("Home", "home"), ("New Search", "search"), ("Searches", "searches"), ("Settings", "settings")] {
+            let row = app.descendants(matching: .any)["sidebar.destination.\(identifier)"]
             XCTAssertTrue(row.waitForExistence(timeout: 5))
             XCTAssertEqual(row.label, destination)
             XCTAssertTrue(row.isHittable, "\(destination) should remain an actionable standard sidebar row.")
@@ -34,7 +34,7 @@ final class FireProspectUITests: XCTestCase {
         app.launchEnvironment["UI_TEST_ACCESSIBILITY_TEXT_SIZE"] = "1"
         app.launch()
 
-        for destination in ["home", "search", "prospects", "settings"] {
+        for destination in ["home", "search", "searches", "settings"] {
             let row = app.descendants(matching: .any)["sidebar.destination.\(destination)"]
             XCTAssertTrue(row.waitForExistence(timeout: 5))
             XCTAssertTrue(row.isHittable, "\(destination) should remain readable and actionable at an accessibility text size.")
