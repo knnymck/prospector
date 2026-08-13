@@ -42,7 +42,7 @@ struct City: Identifiable, Codable, Hashable, Sendable {
     let name: String
     let stateName: String
 
-    var displayName: String { "\(name), \(id.stateID.rawValue)" }
+    var displayName: String { "\(name), \(stateName)" }
 }
 
 struct PostalCodeRecord: Identifiable, Hashable, Codable, Sendable {

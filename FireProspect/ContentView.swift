@@ -52,12 +52,22 @@ struct FlowLayout: Layout {
 struct ContentView: View {
     @State private var selectedDestination: SidebarDestination? = .search
     @State private var searchResults: [ProspectRecord] = []
+    @State private var searchHistory = SearchHistoryStore.load()
 
-    enum SidebarDestination: String, Identifiable {
+    enum SidebarDestination: Hashable, Identifiable {
         case search
         case prospects
+        case history(UUID)
 
-        var id: String { rawValue }
+        var id: String { identifier }
+
+        var identifier: String {
+            switch self {
+            case .search: "search"
+            case .prospects: "prospects"
+            case .history(let id): "history.\(id.uuidString)"
+            }
+        }
 
         var title: String {
             switch self {
@@ -65,6 +75,8 @@ struct ContentView: View {
                 "Search"
             case .prospects:
                 "Prospects"
+            case .history(let id):
+                id.uuidString
             }
         }
 
@@ -74,8 +86,31 @@ struct ContentView: View {
                 "magnifyingglass"
             case .prospects:
                 "person.2"
+            case .history:
+                "clock"
             }
         }
+    }
+
+    private var historyByDay: [(date: Date, entries: [SearchHistoryEntry])] {
+        let calendar = Calendar.current
+        let groups = Dictionary(grouping: searchHistory) { calendar.startOfDay(for: $0.searchedAt) }
+        return groups.keys.sorted(by: >).map { date in
+            (date, groups[date, default: []].sorted { $0.searchedAt > $1.searchedAt })
+        }
+    }
+
+    private var selectedHistory: SearchHistoryEntry? {
+        guard case .history(let id)? = selectedDestination else { return nil }
+        return searchHistory.first { $0.id == id }
+    }
+
+    private func recordSearch(_ results: [ProspectRecord]) {
+        let entry = SearchHistoryEntry(results: results)
+        searchHistory.insert(entry, at: 0)
+        try? SearchHistoryStore.save(searchHistory)
+        searchResults = results
+        selectedDestination = .history(entry.id)
     }
 
     @ViewBuilder
@@ -83,7 +118,7 @@ struct ContentView: View {
         Label(destination.title, systemImage: destination.systemImage)
             .tag(destination)
             .accessibilityLabel(destination.title)
-            .accessibilityIdentifier("sidebar.destination.\(destination.rawValue)")
+            .accessibilityIdentifier("sidebar.destination.\(destination.identifier)")
     }
 
     var body: some View {
@@ -92,7 +127,26 @@ struct ContentView: View {
                 List(selection: $selectedDestination) {
                     Section {
                         destinationRow(.search)
-                        destinationRow(.prospects)
+                        DisclosureGroup {
+                            if searchHistory.isEmpty {
+                                Text("No saved searches")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                            } else {
+                                ForEach(historyByDay, id: \.date) { group in
+                                    DisclosureGroup(group.date.formatted(date: .abbreviated, time: .omitted)) {
+                                        ForEach(group.entries) { entry in
+                                            Label(entry.searchedAt.formatted(date: .omitted, time: .shortened), systemImage: "clock")
+                                                .badge(entry.results.count)
+                                                .tag(SidebarDestination.history(entry.id))
+                                                .accessibilityLabel("Search from \(entry.title), \(entry.results.count) prospects")
+                                        }
+                                    }
+                                }
+                            }
+                        } label: {
+                            destinationRow(.prospects)
+                        }
                     }
                 }
                 .listStyle(.sidebar)
@@ -100,19 +154,22 @@ struct ContentView: View {
                 .accessibilityIdentifier("sidebar.navigation")
             }
             .navigationTitle("FireProspect")
+            .background(.ultraThinMaterial)
             .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 280)
         } detail: {
             Group {
                 switch selectedDestination ?? .search {
                 case .search:
-                    SearchTabView(searchResults: $searchResults)
+                    SearchTabView(searchResults: $searchResults, onSearchCompleted: recordSearch)
                 case .prospects:
                     ProspectsView(searchResults: searchResults)
+                case .history:
+                    ProspectsView(searchResults: selectedHistory?.results ?? [])
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color(nsColor: .windowBackgroundColor))
-            .navigationTitle((selectedDestination ?? .search).title)
+            .background(AppBackground())
+            .navigationTitle(selectedHistory?.title ?? (selectedDestination ?? .search).title)
         }
         .onReceive(NotificationCenter.default.publisher(for: .showSearchDestination)) { _ in
             selectedDestination = .search
@@ -121,7 +178,21 @@ struct ContentView: View {
             selectedDestination = .prospects
         }
         .frame(minWidth: 900, minHeight: 720)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(AppBackground())
+    }
+}
+
+private struct AppBackground: View {
+    var body: some View {
+        ZStack {
+            Color(nsColor: .textBackgroundColor)
+            LinearGradient(
+                colors: [Color.cyan.opacity(0.09), Color.blue.opacity(0.04), Color.clear],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        }
+        .ignoresSafeArea()
     }
 }
 
@@ -129,6 +200,7 @@ struct ContentView: View {
 
 struct SearchTabView: View {
     @Binding var searchResults: [ProspectRecord]
+    let onSearchCompleted: ([ProspectRecord]) -> Void
     @State private var category: String = "Civil Engineering"
     
     // Unified State & City selection state
@@ -278,7 +350,7 @@ struct SearchTabView: View {
                 FlowLayout(spacing: 4) {
                     ForEach(Array(selectedStates).sorted(), id: \.self) { stateID in
                         let name = allStates.first(where: { $0.id == stateID })?.name ?? stateID.rawValue
-                        RemovablePill(label: "\(name) (\(stateID.rawValue))") {
+                        RemovablePill(label: name) {
                             removeState(stateID)
                         }
                     }
@@ -518,7 +590,11 @@ struct SearchTabView: View {
     
     private var selectedCities: [City] {
         selectedCityIDs.compactMap { id in
-            citySuggestions.first(where: { $0.id == id }) ?? City(id: id, name: id.normalizedName.capitalized, stateName: id.stateID.rawValue)
+            citySuggestions.first(where: { $0.id == id }) ?? City(
+                id: id,
+                name: id.normalizedName.capitalized,
+                stateName: allStates.first(where: { $0.id == id.stateID })?.name ?? id.stateID.rawValue
+            )
         }
     }
 
@@ -668,6 +744,7 @@ struct SearchTabView: View {
                 self.excludedCount = finalExcluded
                 self.warnings = displayedWarnings
                 self.isSearching = false
+                self.onSearchCompleted(items)
             }
         }
     }
@@ -696,7 +773,7 @@ struct ProspectsView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Prospects")
                         .font(.title2.weight(.semibold))
-                    Text("\(searchResults.count) results from the current search")
+                    Text("\(searchResults.count) saved result\(searchResults.count == 1 ? "" : "s")")
                         .foregroundStyle(.secondary)
                 }
 
