@@ -101,6 +101,53 @@ struct ProspectRecord: Identifiable, Codable, Hashable, Sendable {
     var updatedAt: Timestamp
 }
 
+/// An immutable snapshot of one completed prospect search.
+struct SearchHistoryEntry: Identifiable, Codable, Hashable, Sendable {
+    let id: UUID
+    let searchedAt: Date
+    let results: [ProspectRecord]
+
+    init(id: UUID = UUID(), searchedAt: Date = Date(), results: [ProspectRecord]) {
+        self.id = id
+        self.searchedAt = searchedAt
+        self.results = results
+    }
+
+    var title: String {
+        searchedAt.formatted(date: .abbreviated, time: .shortened)
+    }
+}
+
+enum SearchHistoryStore {
+    static func defaultURL(fileManager: FileManager = .default) throws -> URL {
+        let directory = try fileManager.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        ).appendingPathComponent("FireProspect", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory.appendingPathComponent("search-history.json")
+    }
+
+    static func load(from url: URL? = nil) -> [SearchHistoryEntry] {
+        do {
+            let source = try (url ?? defaultURL())
+            let data = try Data(contentsOf: source)
+            return try JSONDecoder().decode([SearchHistoryEntry].self, from: data)
+                .sorted { $0.searchedAt > $1.searchedAt }
+        } catch {
+            return []
+        }
+    }
+
+    static func save(_ entries: [SearchHistoryEntry], to url: URL? = nil) throws {
+        let destination = try (url ?? defaultURL())
+        let data = try JSONEncoder().encode(entries.sorted { $0.searchedAt > $1.searchedAt })
+        try data.write(to: destination, options: .atomic)
+    }
+}
+
 struct TeamMember: Identifiable, Codable, Hashable, Sendable {
     let id: TeamMemberID
     var name: String

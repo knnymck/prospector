@@ -74,4 +74,27 @@ final class FireProspectTests: XCTestCase {
             "prospects-civil-engineering.csv"
         )
     }
+
+    func testCityDisplayNameUsesFullStateName() {
+        let city = City(
+            id: CityID(stateID: StateID(rawValue: "CA"), normalizedName: "San Francisco"),
+            name: "San Francisco",
+            stateName: "California"
+        )
+
+        XCTAssertEqual(city.displayName, "San Francisco, California")
+    }
+
+    func testSearchHistoryRoundTripsNewestFirst() throws {
+        let destination = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("json")
+        defer { try? FileManager.default.removeItem(at: destination) }
+        let old = SearchHistoryEntry(searchedAt: Date(timeIntervalSince1970: 100), results: [])
+        let new = SearchHistoryEntry(searchedAt: Date(timeIntervalSince1970: 200), results: [])
+
+        try SearchHistoryStore.save([old, new], to: destination)
+
+        XCTAssertEqual(SearchHistoryStore.load(from: destination).map(\.id), [new.id, old.id])
+    }
 }
