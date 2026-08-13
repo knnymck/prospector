@@ -13,11 +13,16 @@
 		96C75DB5302A264A009FADE1 /* FireProspectTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C75DB4302A264A009FADE1 /* FireProspectTests.swift */; };
 		96C75DBF302A264A009FADE1 /* FireProspectUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C75DBE302A264A009FADE1 /* FireProspectUITests.swift */; };
 		96C75DC1302A264A009FADE1 /* FireProspectUITestsLaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C75DC0302A264A009FADE1 /* FireProspectUITestsLaunchTests.swift */; };
-		96C75DCE302A2728009FADE1 /* ZipcodeDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C75DCD302A2728009FADE1 /* ZipcodeDatabase.swift */; };
 		96C75DD0302A2779009FADE1 /* MapKitSearchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C75DCF302A2779009FADE1 /* MapKitSearchService.swift */; };
 		96C75DD6302A88C0009FADE1 /* uszips.json in Resources */ = {isa = PBXBuildFile; fileRef = 96C75DD5302A88BF009FADE1 /* uszips.json */; };
 		96C75DD9302CF371009FADE1 /* FirecrawlService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C75DD7302CF371009FADE1 /* FirecrawlService.swift */; };
 		96C75DDA302CF371009FADE1 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C75DD8302CF371009FADE1 /* KeychainHelper.swift */; };
+		A10000010000000000000001 /* Geography.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000110000000000000001 /* Geography.swift */; };
+		A10000020000000000000001 /* BundledGeographyRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000120000000000000001 /* BundledGeographyRepository.swift */; };
+		A20000010000000000000001 /* Prospect.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000110000000000000001 /* Prospect.swift */; };
+		A20000020000000000000001 /* CSVExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000120000000000000001 /* CSVExporter.swift */; };
+		A20000030000000000000001 /* MapKitProspectAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000130000000000000001 /* MapKitProspectAdapter.swift */; };
+		A10000030000000000000001 /* GeographyDataMetadata.json in Resources */ = {isa = PBXBuildFile; fileRef = A10000130000000000000001 /* GeographyDataMetadata.json */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -48,11 +53,16 @@
 		96C75DBA302A264A009FADE1 /* FireProspectUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FireProspectUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		96C75DBE302A264A009FADE1 /* FireProspectUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FireProspectUITests.swift; sourceTree = "<group>"; };
 		96C75DC0302A264A009FADE1 /* FireProspectUITestsLaunchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FireProspectUITestsLaunchTests.swift; sourceTree = "<group>"; };
-		96C75DCD302A2728009FADE1 /* ZipcodeDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZipcodeDatabase.swift; sourceTree = "<group>"; };
 		96C75DCF302A2779009FADE1 /* MapKitSearchService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapKitSearchService.swift; sourceTree = "<group>"; };
 		96C75DD5302A88BF009FADE1 /* uszips.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = uszips.json; sourceTree = "<group>"; };
 		96C75DD7302CF371009FADE1 /* FirecrawlService.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = FirecrawlService.swift; sourceTree = "<group>"; };
 		96C75DD8302CF371009FADE1 /* KeychainHelper.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
+		A10000110000000000000001 /* Geography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Geography.swift; sourceTree = "<group>"; };
+		A10000120000000000000001 /* BundledGeographyRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundledGeographyRepository.swift; sourceTree = "<group>"; };
+		A20000110000000000000001 /* Prospect.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Prospect.swift; sourceTree = "<group>"; };
+		A20000120000000000000001 /* CSVExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CSVExporter.swift; sourceTree = "<group>"; };
+		A20000130000000000000001 /* MapKitProspectAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapKitProspectAdapter.swift; sourceTree = "<group>"; };
+		A10000130000000000000001 /* GeographyDataMetadata.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = GeographyDataMetadata.json; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -105,8 +115,8 @@
 			children = (
 				96C75DA2302A2648009FADE1 /* FireProspectApp.swift */,
 				96C75DA4302A2648009FADE1 /* ContentView.swift */,
-				96C75DCD302A2728009FADE1 /* ZipcodeDatabase.swift */,
 				96C75DCF302A2779009FADE1 /* MapKitSearchService.swift */,
+				A10000210000000000000001 /* Domain */,
 				96C75DDE302CF371009FADE1 /* Infrastructure */,
 				96C75DDF302CF371009FADE1 /* Resources */,
 				96C75DA8302A264A009FADE1 /* Preview Content */,
@@ -117,6 +127,9 @@
 		96C75DDE302CF371009FADE1 /* Infrastructure */ = {
 			isa = PBXGroup;
 			children = (
+				A10000230000000000000001 /* Geography */,
+				A20000210000000000000001 /* Export */,
+				A20000220000000000000001 /* MapKit */,
 				96C75DD7302CF371009FADE1 /* FirecrawlService.swift */,
 				96C75DD8302CF371009FADE1 /* KeychainHelper.swift */,
 			);
@@ -128,8 +141,39 @@
 			children = (
 				96C75DA6302A264A009FADE1 /* Assets.xcassets — app icon and accent color */,
 				96C75DD5302A88BF009FADE1 /* uszips.json — ZIP code lookup database */,
+				A10000130000000000000001 /* GeographyDataMetadata.json */,
 			);
 			path = Resources;
+			sourceTree = "<group>";
+		};
+		A10000210000000000000001 /* Domain */ = {
+			isa = PBXGroup;
+			children = ( A10000220000000000000001 /* Models */, );
+			path = Domain;
+			sourceTree = "<group>";
+		};
+		A10000220000000000000001 /* Models */ = {
+			isa = PBXGroup;
+			children = ( A10000110000000000000001 /* Geography.swift */, A20000110000000000000001 /* Prospect.swift */, );
+			path = Models;
+			sourceTree = "<group>";
+		};
+		A10000230000000000000001 /* Geography */ = {
+			isa = PBXGroup;
+			children = ( A10000120000000000000001 /* BundledGeographyRepository.swift */, );
+			path = Geography;
+			sourceTree = "<group>";
+		};
+		A20000210000000000000001 /* Export */ = {
+			isa = PBXGroup;
+			children = ( A20000120000000000000001 /* CSVExporter.swift */, );
+			path = Export;
+			sourceTree = "<group>";
+		};
+		A20000220000000000000001 /* MapKit */ = {
+			isa = PBXGroup;
+			children = ( A20000130000000000000001 /* MapKitProspectAdapter.swift */, );
+			path = MapKit;
 			sourceTree = "<group>";
 		};
 		96C75DA8302A264A009FADE1 /* Preview Content */ = {
@@ -268,6 +312,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				96C75DD6302A88C0009FADE1 /* uszips.json in Resources — ZIP code lookup database */,
+				A10000030000000000000001 /* GeographyDataMetadata.json in Resources */,
 				96C75DA7302A264A009FADE1 /* Assets.xcassets in Resources — app icon and accent color */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -298,7 +343,11 @@
 				96C75DD9302CF371009FADE1 /* FirecrawlService.swift in Sources */,
 				96C75DD0302A2779009FADE1 /* MapKitSearchService.swift in Sources */,
 				96C75DA3302A2648009FADE1 /* FireProspectApp.swift in Sources */,
-				96C75DCE302A2728009FADE1 /* ZipcodeDatabase.swift in Sources */,
+				A10000010000000000000001 /* Geography.swift in Sources */,
+				A10000020000000000000001 /* BundledGeographyRepository.swift in Sources */,
+				A20000010000000000000001 /* Prospect.swift in Sources */,
+				A20000020000000000000001 /* CSVExporter.swift in Sources */,
+				A20000030000000000000001 /* MapKitProspectAdapter.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

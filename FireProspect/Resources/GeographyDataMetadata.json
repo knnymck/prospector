@@ -1,0 +1,21 @@
+{
+  "provider": "SimpleMaps",
+  "license": "See the license supplied with the downloaded SimpleMaps US ZIP Codes dataset; redistribution and commercial-use rights depend on the purchased tier.",
+  "sourceVersion": "Bundled uszips.json snapshot",
+  "sourceDate": "2026-08-10",
+  "checksum": { "algorithm": "SHA-256", "value": "da076dcccd569008b4162754d71610449f279ad8b8fc13f08b50bb704c862db7" },
+  "coverage": { "recordCount": 33100, "uniqueZIPCount": 33100, "stateAndTerritoryCount": 52, "scope": "United States ZIP codes and included territory identifiers" },
+  "representation": {
+    "aliases": "Not represented; CityID uses the normalized primary city plus state identity.",
+    "acceptablePlaceNames": "Not represented by this schema; only the provider's primary city field is searchable.",
+    "territories": "Included when present in state_id and treated like states.",
+    "poBoxes": "Not classified; records may include them but no ZIP-type field is bundled.",
+    "militaryZIPs": "Not classified and may be absent depending on provider coverage.",
+    "multiPlaceZIPs": "One primary city is stored per ZIP; alternate places require a future aliases collection."
+  },
+  "knownLimitations": [
+    "No preferred-versus-acceptable place-name distinction.",
+    "No ZIP type, delivery class, alias, or alternate-place metadata.",
+    "Coordinates and administrative names reflect the source snapshot and require periodic replacement to update."
+  ]
+}
