@@ -1,6 +1,24 @@
 import Foundation
 
 actor BundledGeographyRepository {
+    private static let fullStateNames: [String: String] = [
+        "AL": "Alabama", "AK": "Alaska", "AZ": "Arizona", "AR": "Arkansas", "CA": "California",
+        "CO": "Colorado", "CT": "Connecticut", "DE": "Delaware", "FL": "Florida", "GA": "Georgia",
+        "HI": "Hawaii", "ID": "Idaho", "IL": "Illinois", "IN": "Indiana", "IA": "Iowa",
+        "KS": "Kansas", "KY": "Kentucky", "LA": "Louisiana", "ME": "Maine", "MD": "Maryland",
+        "MA": "Massachusetts", "MI": "Michigan", "MN": "Minnesota", "MS": "Mississippi", "MO": "Missouri",
+        "MT": "Montana", "NE": "Nebraska", "NV": "Nevada", "NH": "New Hampshire", "NJ": "New Jersey",
+        "NM": "New Mexico", "NY": "New York", "NC": "North Carolina", "ND": "North Dakota", "OH": "Ohio",
+        "OK": "Oklahoma", "OR": "Oregon", "PA": "Pennsylvania", "RI": "Rhode Island", "SC": "South Carolina",
+        "SD": "South Dakota", "TN": "Tennessee", "TX": "Texas", "UT": "Utah", "VT": "Vermont",
+        "VA": "Virginia", "WA": "Washington", "WV": "West Virginia", "WI": "Wisconsin", "WY": "Wyoming",
+        "DC": "District of Columbia", "PR": "Puerto Rico", "VI": "U.S. Virgin Islands", "GU": "Guam",
+        "AS": "American Samoa", "MP": "Northern Mariana Islands"
+    ]
+
+    nonisolated static func displayName(for stateID: StateID, fallback: String) -> String {
+        fullStateNames[stateID.rawValue] ?? fallback
+    }
     enum LoadError: Error, Equatable {
         case resourceNotFound(String)
         case unreadableResource(String)
@@ -74,10 +92,11 @@ actor BundledGeographyRepository {
             byCity = byCity.mapValues { $0.sorted { $0.id < $1.id } }
             let cities = Dictionary(grouping: byCity.keys.map { id in
                 let record = byCity[id]!.first!
-                return City(id: id, name: record.cityName, stateName: record.stateName)
+                let stateName = Self.displayName(for: id.stateID, fallback: record.stateName)
+                return City(id: id, name: record.cityName, stateName: stateName)
             }, by: { $0.id.stateID }).mapValues { $0.sorted { $0.name < $1.name } }
             let states = Dictionary(grouping: records, by: \.stateID).map { id, values in
-                StateRecord(id: id, name: values.first?.stateName ?? id.rawValue)
+                StateRecord(id: id, name: Self.displayName(for: id, fallback: values.first?.stateName ?? id.rawValue))
             }.sorted()
             return Indexes(states: states, citiesByState: cities, recordsByCity: byCity, recordsByZIP: byZIP)
         }

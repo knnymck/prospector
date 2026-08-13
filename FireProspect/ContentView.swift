@@ -154,7 +154,7 @@ struct ContentView: View {
                 .accessibilityIdentifier("sidebar.navigation")
             }
             .navigationTitle("FireProspect")
-            .background(.ultraThinMaterial)
+            .background(Color(nsColor: .windowBackgroundColor))
             .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 280)
         } detail: {
             Group {
@@ -184,15 +184,8 @@ struct ContentView: View {
 
 private struct AppBackground: View {
     var body: some View {
-        ZStack {
-            Color(nsColor: .textBackgroundColor)
-            LinearGradient(
-                colors: [Color.cyan.opacity(0.09), Color.blue.opacity(0.04), Color.clear],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        }
-        .ignoresSafeArea()
+        Color(nsColor: .windowBackgroundColor)
+            .ignoresSafeArea()
     }
 }
 
@@ -322,10 +315,6 @@ struct SearchTabView: View {
                                     HStack {
                                         Text(state.name)
                                             .font(.system(size: 11, design: .default))
-                                        Spacer()
-                                        Text(state.id.rawValue)
-                                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                            .foregroundStyle(.secondary)
                                     }
                                     .padding(.horizontal, 8)
                                     .padding(.vertical, 4)
@@ -761,10 +750,14 @@ struct ProspectsView: View {
     @State private var isEnriching = false
     @State private var selectedProspectID: ProspectID?
     @State private var pendingProspect: ProspectRecord?
-    @State private var enrichmentReceipt: EnrichmentReceipt?
+    @State private var enrichmentReceipts: [ProspectID: EnrichmentReceipt] = [:]
+    @State private var remainingCredits: Int?
+    @State private var creditMessage: String?
 
-    private var rows: [ProspectRowModel] {
-        searchResults.map(ProspectRowModel.init(record:))
+    private var rows: [NumberedProspectRow] {
+        searchResults.enumerated().map { offset, record in
+            NumberedProspectRow(number: offset + 1, prospect: ProspectRowModel(record: record))
+        }
     }
 
     var body: some View {
@@ -778,6 +771,15 @@ struct ProspectsView: View {
                 }
 
                 Spacer()
+
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(remainingCredits.map { "Firecrawl credits: \($0)" } ?? "Firecrawl credits: —")
+                        .font(.callout.monospacedDigit())
+                    if let creditMessage {
+                        Text(creditMessage).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                .accessibilityIdentifier("prospects.firecrawl-credits")
 
                 Button("Export CSV", systemImage: "square.and.arrow.down") {
                     Task { await exportResultsToCSV() }
@@ -814,16 +816,28 @@ struct ProspectsView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 Table(rows, selection: $selectedProspectID) {
-                    TableColumn("Business", value: \.name)
-                    TableColumn("Address", value: \.address)
-                    TableColumn("Phone", value: \.phone)
+                    TableColumn("#") { Text("\($0.number)").monospacedDigit() }.width(36)
+                    TableColumn("Business") { Text($0.prospect.name) }
+                    TableColumn("Address") { Text($0.prospect.address) }
+                    TableColumn("Phone") { Text($0.prospect.phone) }
                     TableColumn("Website") { row in
-                        Link(row.websiteURL.host() ?? row.websiteURL.absoluteString, destination: row.websiteURL)
+                        Link(row.prospect.websiteURL.host() ?? row.prospect.websiteURL.absoluteString, destination: row.prospect.websiteURL)
+                    }
+                    TableColumn("Team Page") { row in
+                        if let url = enrichmentReceipts[row.id]?.selectedURL {
+                            Link("Open", destination: url)
+                        } else { Text("—").foregroundStyle(.secondary) }
+                    }
+                    TableColumn("Found Emails") { row in
+                        Text(foundEmails(for: row.id)).textSelection(.enabled)
+                    }
+                    TableColumn("Sitemap") { row in
+                        Text(sitemapStatus(for: row.id))
                     }
                 }
             }
 
-            if let receipt = enrichmentReceipt, !receipt.personnel.people.isEmpty {
+            if let receipt = selectedProspectID.flatMap({ enrichmentReceipts[$0] }), !receipt.personnel.people.isEmpty {
                 GroupBox("Personnel from \(receipt.selectedURL.host() ?? receipt.selectedURL.absoluteString)") {
                     Table(receipt.personnel.people) {
                         TableColumn("Name") { Text($0.name ?? "—") }
@@ -849,10 +863,43 @@ struct ProspectsView: View {
         } message: { prospect in
             Text("Gemma will choose one personnel page for \(prospect.name). Only that page will be submitted to Firecrawl.")
         }
+        .task { await refreshCredits() }
     }
 
     private var selectedProspect: ProspectRecord? {
         searchResults.first { $0.id == selectedProspectID }
+    }
+
+    private func foundEmails(for id: ProspectID) -> String {
+        let emails = enrichmentReceipts[id]?.personnel.people.compactMap(\.email)
+            .filter { !$0.isEmpty } ?? []
+        return emails.isEmpty ? "—" : Array(Set(emails)).sorted().joined(separator: ", ")
+    }
+
+    private func sitemapStatus(for id: ProspectID) -> String {
+        guard let availability = enrichmentReceipts[id]?.discovery.sitemapAvailability else { return "Not checked" }
+        switch availability {
+        case .https: return "Found (HTTPS)"
+        case .httpOnly: return "Found (HTTP only)"
+        case .unavailable: return "Not found"
+        }
+    }
+
+    @MainActor
+    private func refreshCredits() async {
+        let key = KeychainHelper.getKey()
+        guard !key.isEmpty else {
+            remainingCredits = nil
+            creditMessage = "API key not configured"
+            return
+        }
+        do {
+            remainingCredits = try await FirecrawlService.shared.remainingCredits(apiKey: key)
+            creditMessage = nil
+        } catch {
+            remainingCredits = nil
+            creditMessage = "Balance unavailable"
+        }
     }
 
     @MainActor
@@ -871,7 +918,8 @@ struct ProspectsView: View {
             SELECTED // \(receipt.selectedURL.absoluteString)
             PEOPLE // \(receipt.personnel.people.count)
             """
-            enrichmentReceipt = receipt
+            enrichmentReceipts[prospect.id] = receipt
+            await refreshCredits()
         } catch {
             enrichmentMessage = "NONFATAL FAILURE // \(error.localizedDescription)"
         }
@@ -936,6 +984,12 @@ struct ProspectsView: View {
             return false
         }
     }
+}
+
+private struct NumberedProspectRow: Identifiable {
+    let number: Int
+    let prospect: ProspectRowModel
+    var id: ProspectID { prospect.id }
 }
 
 // MARK: - Reusable Removable Pill Component

@@ -23,6 +23,23 @@ actor FirecrawlService {
 
     init(session: URLSession = .shared) { self.session = session }
 
+    func remainingCredits(apiKey: String) async throws -> Int {
+        guard !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw FirecrawlError.missingAPIKey }
+        var request = URLRequest(url: baseURL.appending(path: "team/credit-usage"))
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            throw FirecrawlError.invalidResponse((response as? HTTPURLResponse)?.statusCode ?? 0)
+        }
+        let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let balance = (object?["data"] as? [String: Any]) ?? object
+        let remaining = balance?["remainingCredits"] ?? balance?["creditsRemaining"] ?? balance?["remaining_credits"]
+        guard let value = remaining as? NSNumber else {
+            throw FirecrawlError.requestFailed("Credit balance was missing from the response.")
+        }
+        return value.intValue
+    }
+
     func mapDomain(url: URL, apiKey: String) async throws -> [URL] {
         struct Payload: Encodable { let url: String; let limit: Int }
         struct Response: Decodable { let success: Bool?; let links: [String]? }
