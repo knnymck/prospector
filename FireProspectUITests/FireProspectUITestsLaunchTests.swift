@@ -1,13 +1,13 @@
 //
-//  PropsectorUITestsLaunchTests.swift
-//  PropsectorUITests
+//  FireProspectUITestsLaunchTests.swift
+//  FireProspectUITests
 //
 //  Created by Work on 8/10/26.
 //
 
 import XCTest
 
-final class PropsectorUITestsLaunchTests: XCTestCase {
+final class FireProspectUITestsLaunchTests: XCTestCase {
 
     override class var runsForEachTargetApplicationUIConfiguration: Bool {
         true

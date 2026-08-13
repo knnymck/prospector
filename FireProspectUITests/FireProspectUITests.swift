@@ -1,13 +1,13 @@
 //
-//  PropsectorUITests.swift
-//  PropsectorUITests
+//  FireProspectUITests.swift
+//  FireProspectUITests
 //
 //  Created by Work on 8/10/26.
 //
 
 import XCTest
 
-final class PropsectorUITests: XCTestCase {
+final class FireProspectUITests: XCTestCase {
 
     override func setUpWithError() throws {
         // Put setup code here. This method is called before the invocation of each test method in the class.
