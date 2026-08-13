@@ -102,10 +102,18 @@ final class FireProspectTests: XCTestCase {
             .appendingPathExtension("json")
         defer { try? FileManager.default.removeItem(at: destination) }
         let old = SearchHistoryEntry(searchedAt: Date(timeIntervalSince1970: 100), results: [])
-        let new = SearchHistoryEntry(searchedAt: Date(timeIntervalSince1970: 200), results: [])
+        let new = SearchHistoryEntry(
+            searchedAt: Date(timeIntervalSince1970: 200),
+            results: [],
+            keywords: ["Civil Engineering", "Structural Engineer"],
+            locations: ["Portland, Maine"]
+        )
 
         try SearchHistoryStore.save([old, new], to: destination)
 
-        XCTAssertEqual(SearchHistoryStore.load(from: destination).map(\.id), [new.id, old.id])
+        let loaded = SearchHistoryStore.load(from: destination)
+        XCTAssertEqual(loaded.map(\.id), [new.id, old.id])
+        XCTAssertEqual(loaded.first?.keywords, new.keywords)
+        XCTAssertEqual(loaded.first?.locations, new.locations)
     }
 }
