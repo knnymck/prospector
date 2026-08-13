@@ -53,6 +53,8 @@ struct ContentView: View {
     @State private var selectedDestination: SidebarDestination? = .search
     @State private var searchResults: [ProspectRecord] = []
     @State private var searchHistory = SearchHistoryStore.load()
+    @State private var currentKeywords: [String] = []
+    @State private var currentLocations: [String] = []
 
     enum SidebarDestination: Hashable, Identifiable {
         case search
@@ -105,11 +107,13 @@ struct ContentView: View {
         return searchHistory.first { $0.id == id }
     }
 
-    private func recordSearch(_ results: [ProspectRecord]) {
-        let entry = SearchHistoryEntry(results: results)
+    private func recordSearch(_ results: [ProspectRecord], keywords: [String], locations: [String]) {
+        let entry = SearchHistoryEntry(results: results, keywords: keywords, locations: locations)
         searchHistory.insert(entry, at: 0)
         try? SearchHistoryStore.save(searchHistory)
         searchResults = results
+        currentKeywords = keywords
+        currentLocations = locations
         selectedDestination = .history(entry.id)
     }
 
@@ -162,9 +166,13 @@ struct ContentView: View {
                 case .search:
                     SearchTabView(searchResults: $searchResults, onSearchCompleted: recordSearch)
                 case .prospects:
-                    ProspectsView(searchResults: searchResults)
+                    ProspectsView(searchResults: searchResults, keywords: currentKeywords, locations: currentLocations)
                 case .history:
-                    ProspectsView(searchResults: selectedHistory?.results ?? [])
+                    ProspectsView(
+                        searchResults: selectedHistory?.results ?? [],
+                        keywords: selectedHistory?.keywords ?? [],
+                        locations: selectedHistory?.locations ?? []
+                    )
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -193,13 +201,16 @@ private struct AppBackground: View {
 
 struct SearchTabView: View {
     @Binding var searchResults: [ProspectRecord]
-    let onSearchCompleted: ([ProspectRecord]) -> Void
+    let onSearchCompleted: ([ProspectRecord], [String], [String]) -> Void
     @State private var category: String = "Civil Engineering"
     
     // Unified State & City selection state
     @State private var selectedStates: Set<StateID> = []
     @State private var stateSearch = ""
-    @State private var isStateDropdownFocused = false
+    @FocusState private var isStateDropdownFocused: Bool
+    @FocusState private var isCityDropdownFocused: Bool
+    @State private var isStateInputHovered = false
+    @State private var isCityInputHovered = false
     
     @State private var selectedCityIDs: Set<CityID> = []
     @State private var selectAllCities = false
@@ -291,37 +302,29 @@ struct SearchTabView: View {
             }
             
             VStack(spacing: 0) {
-                TextField("Search states", text: $stateSearch, onEditingChanged: { focused in
-                    isStateDropdownFocused = focused
-                })
+                TextField("Search states", text: $stateSearch)
                 .textFieldStyle(.plain)
+                .focused($isStateDropdownFocused)
                 .font(.system(size: 11, design: .default))
                 .padding(.horizontal, 8)
                 .padding(.vertical, 6)
-                .background(Color(nsColor: .controlBackgroundColor))
+                .background(Color.accentColor.opacity(isStateDropdownFocused ? 0.08 : (isStateInputHovered ? 0.04 : 0)))
                 .overlay(
                     RoundedRectangle(cornerRadius: 4)
-                        .strokeBorder(Color.primary.opacity(0.15), lineWidth: 1)
+                        .strokeBorder(isStateDropdownFocused ? Color.accentColor : Color.primary.opacity(isStateInputHovered ? 0.3 : 0.15), lineWidth: isStateDropdownFocused ? 2 : 1)
                 )
+                .onHover { isStateInputHovered = $0 }
+                .animation(.easeOut(duration: 0.15), value: isStateDropdownFocused)
+                .animation(.easeOut(duration: 0.15), value: isStateInputHovered)
                 
                 if isStateDropdownFocused || !stateSearch.isEmpty {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 2) {
                             ForEach(filteredStateSuggestions) { state in
-                                Button(action: {
+                                PickerSuggestionRow(label: state.name, systemImage: nil) {
                                     selectedStates.insert(state.id)
                                     stateSearch = ""
-                                }) {
-                                    HStack {
-                                        Text(state.name)
-                                            .font(.system(size: 11, design: .default))
-                                    }
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
-                                    .contentShape(Rectangle())
                                 }
-                                .buttonStyle(.plain)
-                                .background(Color.primary.opacity(0.03))
                             }
                         }
                     }
@@ -366,14 +369,18 @@ struct SearchTabView: View {
             
             TextField(selectedStates.isEmpty ? "Select a state first" : "Search cities", text: $citySearch)
                 .textFieldStyle(.plain)
+                .focused($isCityDropdownFocused)
                 .font(.system(size: 11, design: .default))
                 .padding(.horizontal, 8)
                 .padding(.vertical, 6)
-                .background(Color(nsColor: .controlBackgroundColor))
+                .background(Color.accentColor.opacity(isCityDropdownFocused ? 0.08 : (isCityInputHovered ? 0.04 : 0)))
                 .overlay(
                     RoundedRectangle(cornerRadius: 4)
-                        .strokeBorder(Color.primary.opacity(0.15), lineWidth: 1)
+                        .strokeBorder(isCityDropdownFocused ? Color.accentColor : Color.primary.opacity(isCityInputHovered ? 0.3 : 0.15), lineWidth: isCityDropdownFocused ? 2 : 1)
                 )
+                .onHover { isCityInputHovered = $0 }
+                .animation(.easeOut(duration: 0.15), value: isCityDropdownFocused)
+                .animation(.easeOut(duration: 0.15), value: isCityInputHovered)
                 .disabled(selectAllCities || selectedStates.isEmpty)
                 .opacity((selectAllCities || selectedStates.isEmpty) ? 0.4 : 1.0)
             
@@ -394,22 +401,9 @@ struct SearchTabView: View {
                             .padding(8)
                     } else {
                         ForEach(filteredCities) { city in
-                            Button(action: {
+                            PickerSuggestionRow(label: city.displayName, systemImage: "plus.circle") {
                                 addCityToSelection(city)
-                            }) {
-                                HStack {
-                                    Text(city.displayName)
-                                        .font(.system(size: 11, design: .default))
-                                    Spacer()
-                                    Image(systemName: "plus.circle")
-                                        .font(.system(size: 10))
-                                        .foregroundStyle(.secondary)
-                                }
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .contentShape(Rectangle())
                             }
-                            .buttonStyle(.plain)
                         }
                     }
                 }
@@ -589,6 +583,7 @@ struct SearchTabView: View {
 
     private func addCityToSelection(_ city: City) {
         selectedCityIDs.insert(city.id)
+        citySearch = ""
     }
 
     private func removeState(_ stateID: StateID) {
@@ -655,6 +650,11 @@ struct SearchTabView: View {
         let apiKey = KeychainHelper.getKey()
         let zipsToSearch = targetZips
         let cat = category.trimmingCharacters(in: .whitespacesAndNewlines)
+        let searchedLocations = selectAllCities
+            ? selectedStates.sorted().map { stateID in
+                "All cities in \(allStates.first(where: { $0.id == stateID })?.name ?? stateID.rawValue)"
+            }
+            : selectedCities.sorted { $0.displayName < $1.displayName }.map(\.displayName)
         
         Task {
             let service = MapKitSearchService()
@@ -733,7 +733,7 @@ struct SearchTabView: View {
                 self.excludedCount = finalExcluded
                 self.warnings = displayedWarnings
                 self.isSearching = false
-                self.onSearchCompleted(items)
+                self.onSearchCompleted(items, expansion.keywords, searchedLocations)
             }
         }
     }
@@ -745,6 +745,8 @@ struct SearchTabView: View {
 
 struct ProspectsView: View {
     let searchResults: [ProspectRecord]
+    var keywords: [String] = []
+    var locations: [String] = []
     @State private var exportState: ExportState = .idle
     @State private var enrichmentMessage: String?
     @State private var isEnriching = false
@@ -753,6 +755,7 @@ struct ProspectsView: View {
     @State private var enrichmentReceipts: [ProspectID: EnrichmentReceipt] = [:]
     @State private var remainingCredits: Int?
     @State private var creditMessage: String?
+    @State private var hoveredProspectID: ProspectID?
 
     private var rows: [NumberedProspectRow] {
         searchResults.enumerated().map { offset, record in
@@ -762,6 +765,10 @@ struct ProspectsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            if !keywords.isEmpty || !locations.isEmpty {
+                searchSummary
+            }
+
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Prospects")
@@ -815,26 +822,7 @@ struct ProspectsView: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                Table(rows, selection: $selectedProspectID) {
-                    TableColumn("#") { Text("\($0.number)").monospacedDigit() }.width(36)
-                    TableColumn("Business") { Text($0.prospect.name) }
-                    TableColumn("Address") { Text($0.prospect.address) }
-                    TableColumn("Phone") { Text($0.prospect.phone) }
-                    TableColumn("Website") { row in
-                        Link(row.prospect.websiteURL.host() ?? row.prospect.websiteURL.absoluteString, destination: row.prospect.websiteURL)
-                    }
-                    TableColumn("Team Page") { row in
-                        if let url = enrichmentReceipts[row.id]?.selectedURL {
-                            Link("Open", destination: url)
-                        } else { Text("—").foregroundStyle(.secondary) }
-                    }
-                    TableColumn("Found Emails") { row in
-                        Text(foundEmails(for: row.id)).textSelection(.enabled)
-                    }
-                    TableColumn("Sitemap") { row in
-                        Text(sitemapStatus(for: row.id))
-                    }
-                }
+                frozenProspectsTable
             }
 
             if let receipt = selectedProspectID.flatMap({ enrichmentReceipts[$0] }), !receipt.personnel.people.isEmpty {
@@ -864,6 +852,132 @@ struct ProspectsView: View {
             Text("Gemma will choose one personnel page for \(prospect.name). Only that page will be submitted to Firecrawl.")
         }
         .task { await refreshCredits() }
+    }
+
+    private var searchSummary: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Search summary", systemImage: "line.3.horizontal.decrease.circle")
+                .font(.headline)
+            if !keywords.isEmpty {
+                summaryLine(title: "Keywords", values: keywords)
+            }
+            if !locations.isEmpty {
+                summaryLine(title: "Cities", values: locations)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.accentColor.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.accentColor.opacity(0.25)))
+        .accessibilityIdentifier("prospects.search-summary")
+    }
+
+    private func summaryLine(title: String, values: [String]) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(title.uppercased())
+                .font(.caption2.weight(.bold).monospaced())
+                .foregroundStyle(.secondary)
+                .frame(width: 64, alignment: .leading)
+            Text(values.joined(separator: " • "))
+                .font(.callout)
+                .lineLimit(2)
+        }
+    }
+
+    private var frozenProspectsTable: some View {
+        ScrollView(.vertical) {
+            HStack(alignment: .top, spacing: 0) {
+                VStack(spacing: 0) {
+                    frozenRow(number: "#", business: "Business", isHeader: true)
+                    ForEach(rows) { row in
+                        frozenRow(number: "\(row.number)", business: row.prospect.name, id: row.id)
+                    }
+                }
+                .background(.background)
+                .zIndex(1)
+
+                ScrollView(.horizontal) {
+                    VStack(spacing: 0) {
+                        detailRow(values: ["Address", "Phone", "Website", "Team Page", "Found Emails", "Sitemap"], isHeader: true)
+                        ForEach(rows) { row in
+                            detailProspectRow(row)
+                        }
+                    }
+                }
+            }
+        }
+        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.primary.opacity(0.14)))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .accessibilityIdentifier("prospects.results-table")
+    }
+
+    private func rowBackground(_ id: ProspectID?) -> Color {
+        guard let id else { return Color.primary.opacity(0.055) }
+        if selectedProspectID == id { return Color.accentColor.opacity(0.18) }
+        if hoveredProspectID == id { return Color.accentColor.opacity(0.09) }
+        return Color.clear
+    }
+
+    private func frozenRow(number: String, business: String, id: ProspectID? = nil, isHeader: Bool = false) -> some View {
+        HStack(spacing: 0) {
+            Text(number).monospacedDigit().frame(width: 44, alignment: .leading)
+            Text(business).lineLimit(1).frame(width: 210, alignment: .leading)
+        }
+        .font(isHeader ? .caption.weight(.semibold) : .callout)
+        .padding(.horizontal, 8)
+        .frame(height: 36)
+        .background(rowBackground(id))
+        .contentShape(Rectangle())
+        .onTapGesture { if let id { selectedProspectID = id } }
+        .onHover { hovering in if let id { hoveredProspectID = hovering ? id : nil } }
+        .animation(.easeOut(duration: 0.12), value: hoveredProspectID)
+    }
+
+    private func detailRow(values: [String], id: ProspectID? = nil, isHeader: Bool = false) -> some View {
+        HStack(spacing: 16) {
+            ForEach(Array(values.enumerated()), id: \.offset) { _, value in
+                Text(value).lineLimit(1).frame(width: 180, alignment: .leading)
+            }
+        }
+        .font(isHeader ? .caption.weight(.semibold) : .callout)
+        .padding(.horizontal, 12)
+        .frame(height: 36)
+        .background(rowBackground(id))
+        .contentShape(Rectangle())
+        .onTapGesture { if let id { selectedProspectID = id } }
+        .onHover { hovering in if let id { hoveredProspectID = hovering ? id : nil } }
+        .animation(.easeOut(duration: 0.12), value: hoveredProspectID)
+    }
+
+    private func detailProspectRow(_ row: NumberedProspectRow) -> some View {
+        HStack(spacing: 16) {
+            detailCell(row.prospect.address)
+            detailCell(row.prospect.phone)
+            Link(row.prospect.websiteURL.host() ?? row.prospect.websiteURL.absoluteString, destination: row.prospect.websiteURL)
+                .lineLimit(1).frame(width: 180, alignment: .leading)
+            Group {
+                if let url = enrichmentReceipts[row.id]?.selectedURL {
+                    Link("Open", destination: url)
+                } else {
+                    Text("—").foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: 180, alignment: .leading)
+            detailCell(foundEmails(for: row.id)).textSelection(.enabled)
+            detailCell(sitemapStatus(for: row.id))
+        }
+        .font(.callout)
+        .padding(.horizontal, 12)
+        .frame(height: 36)
+        .background(rowBackground(row.id))
+        .contentShape(Rectangle())
+        .onTapGesture { selectedProspectID = row.id }
+        .onHover { hoveredProspectID = $0 ? row.id : nil }
+        .animation(.easeOut(duration: 0.12), value: hoveredProspectID)
+    }
+
+    private func detailCell(_ value: String) -> some View {
+        Text(value).lineLimit(1).frame(width: 180, alignment: .leading)
     }
 
     private var selectedProspect: ProspectRecord? {
@@ -990,6 +1104,39 @@ private struct NumberedProspectRow: Identifiable {
     let number: Int
     let prospect: ProspectRowModel
     var id: ProspectID { prospect.id }
+}
+
+// MARK: - Interactive Picker Row
+
+private struct PickerSuggestionRow: View {
+    let label: String
+    let systemImage: String?
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack {
+                Text(label)
+                    .font(.system(size: 11))
+                Spacer(minLength: 8)
+                if let systemImage {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 10))
+                        .foregroundStyle(isHovered ? Color.accentColor : Color.secondary)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(isHovered ? Color.accentColor.opacity(0.12) : Color.clear)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
+        .animation(.easeOut(duration: 0.12), value: isHovered)
+    }
 }
 
 // MARK: - Reusable Removable Pill Component

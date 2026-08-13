@@ -106,11 +106,23 @@ struct SearchHistoryEntry: Identifiable, Codable, Hashable, Sendable {
     let id: UUID
     let searchedAt: Date
     let results: [ProspectRecord]
+    /// The exact terms and locations used to produce this snapshot. Optional so
+    /// history written by earlier app versions remains decodable.
+    let keywords: [String]?
+    let locations: [String]?
 
-    init(id: UUID = UUID(), searchedAt: Date = Date(), results: [ProspectRecord]) {
+    init(
+        id: UUID = UUID(),
+        searchedAt: Date = Date(),
+        results: [ProspectRecord],
+        keywords: [String]? = nil,
+        locations: [String]? = nil
+    ) {
         self.id = id
         self.searchedAt = searchedAt
         self.results = results
+        self.keywords = keywords
+        self.locations = locations
     }
 
     var title: String {
