@@ -216,12 +216,12 @@ actor SiteEnrichmentService {
         self.discoveryService = discoveryService
     }
 
-    func enrichOnePage(website: URL, apiKey: String) async throws -> EnrichmentReceipt {
+    func findPersonnelPage(website: URL) async throws -> EnrichmentReceipt {
         let discovery = try await discoveryService.discover(on: website)
         let capability = await model.capability()
         guard case .available = capability else {
             // Homepage navigation discovery above is useful independently. Do not select a
-            // personnel page or extract names/titles when local reasoning is unavailable.
+            // personnel page when local reasoning is unavailable.
             return EnrichmentReceipt(
                 selectedURL: nil,
                 discovery: discovery,
@@ -238,7 +238,13 @@ actor SiteEnrichmentService {
             if case .unavailable(let unavailable) = selection { reason = unavailable } else { reason = .loadFailed("Personnel selection failed.") }
             return EnrichmentReceipt(selectedURL: nil, discovery: discovery, usedFirecrawlMap: false, personnel: PersonnelExtraction(people: []), aiEnhancement: .skipped(reason))
         }
+        return EnrichmentReceipt(selectedURL: selected, discovery: discovery, usedFirecrawlMap: false, personnel: PersonnelExtraction(people: []), aiEnhancement: .completed)
+    }
+
+    func enrichOnePage(website: URL, apiKey: String) async throws -> EnrichmentReceipt {
+        let receipt = try await findPersonnelPage(website: website)
+        guard let selected = receipt.selectedURL else { return receipt }
         let personnel = try await FirecrawlService.shared.extractPersonnel(fromSinglePage: selected, apiKey: apiKey)
-        return EnrichmentReceipt(selectedURL: selected, discovery: discovery, usedFirecrawlMap: false, personnel: personnel, aiEnhancement: .completed)
+        return EnrichmentReceipt(selectedURL: selected, discovery: receipt.discovery, usedFirecrawlMap: false, personnel: personnel, aiEnhancement: .completed)
     }
 }

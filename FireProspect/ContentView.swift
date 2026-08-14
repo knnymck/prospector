@@ -1258,13 +1258,13 @@ struct ProspectsView: View {
     @State private var pendingProspect: ProspectRecord?
     @State private var confirmingCrawlAll = false
     @State private var enrichmentReceipts: [ProspectID: EnrichmentReceipt] = [:]
-    @State private var sitemapAvailability: [ProspectID: SitemapAvailability] = [:]
-    @State private var isCheckingSitemaps = false
-    @State private var checkedSitemapCount = 0
+    @State private var checkedPersonnelPageIDs = Set<ProspectID>()
+    @State private var isFindingPersonnelPages = false
+    @State private var checkedPersonnelPageCount = 0
     @State private var remainingCredits: Int?
     @State private var creditMessage: String?
     @State private var hoveredProspectID: ProspectID?
-    @State private var presentedSitemapID: ProspectID?
+    @State private var presentedListMenuID: ProspectID?
     @State private var enrichingProspectID: ProspectID?
     @State private var prospectForNewList: ProspectID?
 
@@ -1275,9 +1275,6 @@ struct ProspectsView: View {
         _lists = lists
         self.title = title
         self.allowsCrawling = allowsCrawling
-        _sitemapAvailability = State(initialValue: Dictionary(uniqueKeysWithValues: searchResults.compactMap { prospect in
-            SitemapAvailabilityCache.cached(for: prospect.websiteURL).map { (prospect.id, $0) }
-        }))
     }
 
     private var rows: [NumberedProspectRow] {
@@ -1318,11 +1315,11 @@ struct ProspectsView: View {
                 }
                 .disabled(searchResults.isEmpty || exportState.isBusy)
 
-                Button(isCheckingSitemaps ? "Checking Sitemaps…" : "Check Sitemaps", systemImage: "network") {
-                    Task { await checkSitemaps(force: true) }
+                Button(isFindingPersonnelPages ? "Finding Personnel Pages…" : "Find Personnel Page", systemImage: "person.crop.rectangle.stack") {
+                    Task { await findPersonnelPages(force: true) }
                 }
-                .disabled(searchResults.isEmpty || isCheckingSitemaps)
-                .help("Checks /sitemap.xml directly with Swift HTTP. This does not use Firecrawl credits.")
+                .disabled(searchResults.isEmpty || isFindingPersonnelPages)
+                .help("Checks header, footer, and nav links with Swift HTTP and asks the local model to choose a personnel page. This does not use Firecrawl credits.")
 
                 if allowsCrawling {
                     Button("Crawl All Pages", systemImage: "person.text.rectangle") {
@@ -1357,12 +1354,12 @@ struct ProspectsView: View {
                     .progressViewStyle(.linear)
                     .animation(.linear(duration: 0.25), value: enrichmentProgress)
                     .accessibilityIdentifier("prospects.enrichment-progress")
-            } else if isCheckingSitemaps {
-                ProgressView(value: Double(checkedSitemapCount), total: Double(max(searchResults.count, 1))) {
-                    Text("Checking sitemaps \(checkedSitemapCount) of \(searchResults.count)")
+            } else if isFindingPersonnelPages {
+                ProgressView(value: Double(checkedPersonnelPageCount), total: Double(max(searchResults.count, 1))) {
+                    Text("Finding personnel pages \(checkedPersonnelPageCount) of \(searchResults.count)")
                 }
                 .progressViewStyle(.linear)
-                .accessibilityIdentifier("prospects.sitemap-progress")
+                .accessibilityIdentifier("prospects.personnel-page-progress")
             }
 
             if rows.isEmpty {
@@ -1485,7 +1482,7 @@ struct ProspectsView: View {
     }
 
     private var tableHeaders: [String] {
-        ["Address", "Phone", "Website", "Team Page", "Found Emails", "Sitemap"] + (allowsCrawling ? ["Crawl"] : []) + ["List"]
+        ["Address", "Phone", "Website", "Team Page", "Found Emails", "Personnel Page"] + (allowsCrawling ? ["Crawl"] : []) + ["List"]
     }
 
     private func rowBackground(_ id: ProspectID?) -> Color {
@@ -1547,7 +1544,7 @@ struct ProspectsView: View {
             }
             .frame(width: width, alignment: .leading)
             detailCell(foundEmails(for: row.id), width: width).textSelection(.enabled)
-            sitemapCell(for: row, width: width)
+            personnelPageCell(for: row, width: width)
             if allowsCrawling {
                 Button(enrichingProspectID == row.id ? "Crawling…" : "Crawl") {
                     if let prospect = searchResults.first(where: { $0.id == row.id }) { pendingProspect = prospect }
@@ -1558,16 +1555,16 @@ struct ProspectsView: View {
                 .frame(width: width, alignment: .leading)
                 .accessibilityLabel("Crawl \(row.prospect.name)")
             }
-            Menu("Add to List") {
-                Button("New List…", systemImage: "plus") { prospectForNewList = row.id }
-                Divider()
-                ForEach(lists) { list in
-                    Button(list.name) { add(row.id, to: list.id) }
+            Button("Add to List") { presentedListMenuID = row.id }
+                .buttonStyle(.borderless)
+                .popover(isPresented: Binding(
+                    get: { presentedListMenuID == row.id },
+                    set: { if !$0 { presentedListMenuID = nil } }
+                ), arrowEdge: .bottom) {
+                    addToListPopover(for: row)
                 }
-            }
-            .menuStyle(.borderlessButton)
-            .frame(width: width, alignment: .leading)
-            .accessibilityLabel("Add \(row.prospect.name) to list")
+                .frame(width: width, alignment: .leading)
+                .accessibilityLabel("Add \(row.prospect.name) to list")
         }
         .font(.callout)
         .padding(.horizontal, 12)
@@ -1588,68 +1585,43 @@ struct ProspectsView: View {
         guard let prospect = searchResults.first(where: { $0.id == prospectID }) else { return }
         lists = ProspectListStore.adding(prospect, to: listID, in: lists)
         try? ProspectListStore.save(lists)
+        presentedListMenuID = nil
+    }
+
+    private func addToListPopover(for row: NumberedProspectRow) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Add to List")
+                .font(.headline)
+            Button("New List…", systemImage: "plus") {
+                presentedListMenuID = nil
+                prospectForNewList = row.id
+            }
+            Divider()
+            if lists.isEmpty {
+                Text("No lists yet.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(lists) { list in
+                    Button(list.name) { add(row.id, to: list.id) }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+        .padding(14)
+        .frame(width: 220, alignment: .leading)
     }
 
     @ViewBuilder
-    private func sitemapCell(for row: NumberedProspectRow, width: CGFloat) -> some View {
-        if let availability = sitemapAvailability(for: row.id), availability != .unavailable {
-            Button("Sitemap") {
-                presentedSitemapID = row.id
-            }
-            .buttonStyle(.link)
-            .frame(width: width, alignment: .leading)
-            .accessibilityLabel("Show sitemap for \(row.prospect.name)")
-            .popover(isPresented: Binding(
-                get: { presentedSitemapID == row.id },
-                set: { if !$0 { presentedSitemapID = nil } }
-            ), arrowEdge: .bottom) {
-                sitemapPreview(for: row, availability: availability)
-            }
+    private func personnelPageCell(for row: NumberedProspectRow, width: CGFloat) -> some View {
+        if let url = enrichmentReceipts[row.id]?.selectedURL {
+            Link("Found", destination: url)
+                .lineLimit(1)
+                .help(url.absoluteString)
+                .frame(width: width, alignment: .leading)
+                .accessibilityLabel("Open found personnel page for \(row.prospect.name)")
         } else {
-            detailCell(sitemapStatus(for: row.id), width: width)
+            detailCell(personnelPageStatus(for: row.id), width: width)
         }
-    }
-
-    private func sitemapPreview(for row: NumberedProspectRow, availability: SitemapAvailability) -> some View {
-        let sitemapURL = sitemapURL(for: row.prospect.websiteURL, availability: availability)
-        let discoveredLinks = SitemapAvailabilityCache.links(for: row.prospect.websiteURL)
-        return VStack(alignment: .leading, spacing: 10) {
-            Text("Sitemap")
-                .font(.headline)
-            Text(row.prospect.websiteURL.host() ?? row.prospect.name)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Link("Open sitemap.xml", destination: sitemapURL)
-            Divider()
-            if discoveredLinks.isEmpty {
-                Text("The sitemap was found, but it did not contain any page URLs to preview.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 8) {
-                        ForEach(discoveredLinks, id: \.absoluteString) { url in
-                            Link(url.absoluteString, destination: url)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    }
-                }
-                .frame(height: min(CGFloat(discoveredLinks.count) * 27, 240))
-            }
-        }
-        .padding(16)
-        .frame(width: 440, alignment: .leading)
-    }
-
-    private func sitemapURL(for website: URL, availability: SitemapAvailability) -> URL {
-        var components = URLComponents(url: website, resolvingAgainstBaseURL: false)!
-        components.scheme = availability == .httpOnly ? "http" : "https"
-        components.path = "/sitemap.xml"
-        components.query = nil
-        components.fragment = nil
-        return components.url!
     }
 
     private var selectedProspect: ProspectRecord? {
@@ -1662,47 +1634,43 @@ struct ProspectsView: View {
         return emails.isEmpty ? "—" : Array(Set(emails)).sorted().joined(separator: ", ")
     }
 
-    private func sitemapStatus(for id: ProspectID) -> String {
-        guard let availability = sitemapAvailability(for: id) else {
-            return isCheckingSitemaps ? "Checking…" : "Not checked"
-        }
-        switch availability {
-        case .https, .httpOnly: return "Sitemap"
-        case .unavailable: return "Not found"
-        }
-    }
-
-    private func sitemapAvailability(for id: ProspectID) -> SitemapAvailability? {
-        enrichmentReceipts[id]?.discovery.sitemapAvailability ?? sitemapAvailability[id]
+    private func personnelPageStatus(for id: ProspectID) -> String {
+        if enrichmentReceipts[id]?.selectedURL != nil { return "Found" }
+        return checkedPersonnelPageIDs.contains(id) ? "Not found" : (isFindingPersonnelPages ? "Checking…" : "Not checked")
     }
 
     @MainActor
-    private func checkSitemaps(force: Bool) async {
+    private func findPersonnelPages(force: Bool) async {
         guard !searchResults.isEmpty else { return }
-        let prospectsToCheck = force ? searchResults : searchResults.filter { sitemapAvailability[$0.id] == nil }
+        let prospectsToCheck = force ? searchResults : searchResults.filter { !checkedPersonnelPageIDs.contains($0.id) }
         guard !prospectsToCheck.isEmpty else { return }
-        if force { sitemapAvailability = [:] }
-        isCheckingSitemaps = true
-        checkedSitemapCount = 0
-        enrichmentMessage = "FREE DISCOVERY // Checking sitemap.xml directly; no Firecrawl credits are used…"
+        if force {
+            checkedPersonnelPageIDs.removeAll()
+            enrichmentReceipts = enrichmentReceipts.filter { receipt in !prospectsToCheck.contains { $0.id == receipt.key } }
+        }
+        isFindingPersonnelPages = true
+        checkedPersonnelPageCount = 0
+        enrichmentMessage = "FREE DISCOVERY // Finding personnel pages from header, footer, and nav links with HTTP GET + local model; no Firecrawl credits are used…"
 
-        await withTaskGroup(of: (ProspectRecord, SitemapAvailability).self) { group in
+        await withTaskGroup(of: (ProspectRecord, EnrichmentReceipt?).self) { group in
             for prospect in prospectsToCheck {
                 group.addTask {
-                    let availability = await SiteLinkDiscoveryService.shared.sitemapAvailability(on: prospect.websiteURL)
-                    return (prospect, availability)
+                    let receipt = try? await SiteEnrichmentService.shared.findPersonnelPage(website: prospect.websiteURL)
+                    return (prospect, receipt)
                 }
             }
-            for await (prospect, availability) in group {
-                sitemapAvailability[prospect.id] = availability
-                SitemapAvailabilityCache.store(availability, for: prospect.websiteURL)
-                checkedSitemapCount += 1
+            for await (prospect, receipt) in group {
+                if let receipt {
+                    enrichmentReceipts[prospect.id] = receipt
+                }
+                checkedPersonnelPageIDs.insert(prospect.id)
+                checkedPersonnelPageCount += 1
             }
         }
 
-        isCheckingSitemaps = false
-        let found = sitemapAvailability.values.filter { $0 != .unavailable }.count
-        enrichmentMessage = "FREE DISCOVERY // Sitemap check complete: \(found) of \(searchResults.count) available; 0 Firecrawl credits used."
+        isFindingPersonnelPages = false
+        let found = enrichmentReceipts.values.filter { $0.selectedURL != nil }.count
+        enrichmentMessage = "FREE DISCOVERY // Personnel page search complete: \(found) of \(searchResults.count) found; 0 Firecrawl credits used."
     }
 
     @MainActor
