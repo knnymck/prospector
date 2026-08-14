@@ -23,8 +23,9 @@ struct KeywordExpansion: Codable, Equatable, Sendable {
 }
 
 struct LocalModelManifest: Sendable {
-    static let gemmaThreeOneB = LocalModelManifest(displayName: "On-device AI", repositoryID: "mlx-community/gemma-3-1b-it-4bit", detail: "Runs privately on this Mac • Suggests related search terms")
+    static let gemmaThreeOneB = LocalModelManifest(displayName: "On-device AI", modelName: "Gemma 3 1B", repositoryID: "mlx-community/gemma-3-1b-it-4bit", detail: "Runs privately on this Mac • Suggests related search terms")
     let displayName: String
+    let modelName: String
     let repositoryID: String
     let detail: String
 }

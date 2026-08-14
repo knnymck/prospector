@@ -350,7 +350,7 @@ struct HomeView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Turn local searches into qualified prospects")
+                    Text("Prospector")
                         .font(.largeTitle.weight(.bold))
                     Text("Find the right businesses, uncover the people behind them, and build an actionable outreach list.")
                         .foregroundStyle(.secondary)
@@ -377,7 +377,7 @@ struct HomeView: View {
                         Label(modelAvailability == .ready ? "Active" : "Not active", systemImage: modelAvailability == .ready ? "checkmark.circle.fill" : "pause.circle")
                             .font(.headline)
                             .foregroundStyle(modelAvailability == .ready ? Color.green : Color.secondary)
-                        Text(LocalModelService.manifest.displayName)
+                        Text(LocalModelService.manifest.modelName)
                             .font(.title3.weight(.semibold))
                         Text(modelAvailability.label)
                             .font(.callout).foregroundStyle(.secondary)
