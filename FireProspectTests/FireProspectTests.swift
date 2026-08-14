@@ -68,6 +68,12 @@ final class FireProspectTests: XCTestCase {
         XCTAssertEqual(SitemapAvailability.httpOnly.rawValue, "HTTP-only sitemap")
     }
 
+    func testSitemapDetectionRejectsHTMLSoft404s() {
+        XCTAssertTrue(SiteLinkDiscoveryService.isSitemapDocument(Data("<?xml version=\"1.0\"?><urlset></urlset>".utf8)))
+        XCTAssertTrue(SiteLinkDiscoveryService.isSitemapDocument(Data("<sitemapindex></sitemapindex>".utf8)))
+        XCTAssertFalse(SiteLinkDiscoveryService.isSitemapDocument(Data("<html><h1>Not found</h1></html>".utf8)))
+    }
+
     func testSafeFilenameRemovesPathCharacters() {
         XCTAssertEqual(
             CSVExporter.safeFilename(stem: "../../Civil / Engineering"),
