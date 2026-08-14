@@ -14,16 +14,16 @@ struct LocalModelSetupWizard: View {
                 Image(systemName: "cpu.fill").font(.system(size: 34)).foregroundStyle(.tint)
                 VStack(alignment: .leading) {
                     Text("Set up local AI").font(.title.bold())
-                    Text("Gemma4 2B • MLX for Apple Silicon").foregroundStyle(.secondary)
+                    Text("Gemma 3 1B • MLX for Apple Silicon").foregroundStyle(.secondary)
                 }
             }
             Divider()
             Group {
                 switch stage {
                 case .introduction: introduction
-                case .installing: activity(title: "Downloading and loading Gemma4 2B", detail: "MLX is downloading the public model from Hugging Face. No account or access token is required.")
+                case .installing: activity(title: "Downloading and loading Gemma 3 1B", detail: "MLX is downloading the public 4-bit model from Hugging Face. No account or access token is required.")
                 case .verifying: activity(title: "Verifying local inference", detail: "Running a private test prompt on this Mac…")
-                case .complete: result(icon: "checkmark.circle.fill", color: .green, title: "Gemma4 2B is ready", detail: "FireProspect now runs the model locally with native MLX. Prompts do not leave your Mac.")
+                case .complete: result(icon: "checkmark.circle.fill", color: .green, title: "Gemma 3 1B is ready", detail: "FireProspect now runs the model locally with native MLX. Prompts do not leave your Mac.")
                 case .failed: result(icon: "exclamationmark.triangle.fill", color: .orange, title: "Setup could not finish", detail: errorMessage)
                 }
             }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -31,7 +31,7 @@ struct LocalModelSetupWizard: View {
             HStack {
                 if stage != .installing && stage != .verifying { Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction) }
                 Spacer()
-                if stage == .introduction || stage == .failed { Button(stage == .failed ? "Try Again" : "Install Gemma4 2B") { install() }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction) }
+                if stage == .introduction || stage == .failed { Button(stage == .failed ? "Try Again" : "Install Gemma 3 1B") { install() }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction) }
                 if stage == .complete { Button("Done") { onCompletion(); dismiss() }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction) }
             }
         }
@@ -43,7 +43,7 @@ struct LocalModelSetupWizard: View {
         VStack(alignment: .leading, spacing: 16) {
             Label("Optimized for M-series Macs", systemImage: "apple.logo").font(.headline)
             Text("FireProspect uses Apple's MLX framework—not Ollama—to run a 4-bit Gemma checkpoint efficiently in unified memory.")
-            Label("About 1.5 GB download", systemImage: "internaldrive")
+            Label("Compact 1B model download", systemImage: "internaldrive")
             Label("Saved in this app's model cache", systemImage: "folder")
             Label("No Hugging Face token required", systemImage: "person.badge.key")
             Text("An existing Python Hugging Face cache may be stored outside this app's sandbox. FireProspect manages its own verified copy so setup remains reliable.").font(.callout).foregroundStyle(.secondary)

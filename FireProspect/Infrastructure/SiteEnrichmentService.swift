@@ -1,9 +1,41 @@
 import Foundation
 
-enum SitemapAvailability: String, Sendable, Equatable {
+enum SitemapAvailability: String, Sendable, Equatable, Codable {
     case https = "HTTPS sitemap"
     case httpOnly = "HTTP-only sitemap"
     case unavailable = "No sitemap found"
+}
+
+/// Persists free sitemap checks so revisiting a saved search does not repeat every request.
+struct SitemapAvailabilityCache {
+    private static let defaultsKey = "sitemapAvailabilityByHost.v1"
+    private static let linksKey = "sitemapCandidateLinksByHost.v1"
+
+    static func cached(for website: URL, defaults: UserDefaults = .standard) -> SitemapAvailability? {
+        guard let host = website.host?.lowercased(),
+              let value = defaults.dictionary(forKey: defaultsKey)?[host] as? String else { return nil }
+        return SitemapAvailability(rawValue: value)
+    }
+
+    static func store(_ availability: SitemapAvailability, for website: URL, defaults: UserDefaults = .standard) {
+        guard let host = website.host?.lowercased() else { return }
+        var values = defaults.dictionary(forKey: defaultsKey) as? [String: String] ?? [:]
+        values[host] = availability.rawValue
+        defaults.set(values, forKey: defaultsKey)
+    }
+
+    static func links(for website: URL, defaults: UserDefaults = .standard) -> [URL] {
+        guard let host = website.host?.lowercased(),
+              let strings = defaults.dictionary(forKey: linksKey)?[host] as? [String] else { return [] }
+        return strings.compactMap(URL.init(string:))
+    }
+
+    static func storeLinks(_ links: [URL], for website: URL, defaults: UserDefaults = .standard) {
+        guard let host = website.host?.lowercased() else { return }
+        var values = defaults.dictionary(forKey: linksKey) as? [String: [String]] ?? [:]
+        values[host] = Array(links.prefix(SiteLinkDiscoveryService.maximumCandidateCount)).map(\.absoluteString)
+        defaults.set(values, forKey: linksKey)
+    }
 }
 
 struct LinkDiscovery: Sendable {
@@ -36,22 +68,34 @@ actor SiteLinkDiscoveryService: SiteLinkDiscovering {
 
     func discover(on website: URL) async throws -> LinkDiscovery {
         guard let host = website.host, isPublicHost(host) else { throw SiteEnrichmentError.invalidWebsite }
+        let cachedLinks = SitemapAvailabilityCache.links(for: website)
+        if !cachedLinks.isEmpty, let availability = SitemapAvailabilityCache.cached(for: website) {
+            return LinkDiscovery(links: cachedLinks, sitemapAvailability: availability, usedHomepage: false)
+        }
         let (availability, sitemapData) = await fetchSitemap(host: host)
+        SitemapAvailabilityCache.store(availability, for: website)
 
         let sitemapLinks = sameSiteLinks(in: sitemapData, baseURL: website)
         if !sitemapLinks.isEmpty {
-            return LinkDiscovery(links: Array(sitemapLinks.prefix(Self.maximumCandidateCount)), sitemapAvailability: availability, usedHomepage: false)
+            let links = Array(sitemapLinks.prefix(Self.maximumCandidateCount))
+            SitemapAvailabilityCache.storeLinks(links, for: website)
+            return LinkDiscovery(links: links, sitemapAvailability: availability, usedHomepage: false)
         }
 
         let homepageData = await fetch(website)
         let homepageLinks = sameSiteLinks(in: homepageData, baseURL: website)
-        return LinkDiscovery(links: Array(homepageLinks.prefix(Self.maximumCandidateCount)), sitemapAvailability: availability, usedHomepage: true)
+        let links = Array(homepageLinks.prefix(Self.maximumCandidateCount))
+        return LinkDiscovery(links: links, sitemapAvailability: availability, usedHomepage: true)
     }
 
     /// Checks the conventional sitemap endpoint using URLSession only. This path never calls Firecrawl.
     func sitemapAvailability(on website: URL) async -> SitemapAvailability {
         guard let host = website.host, isPublicHost(host) else { return .unavailable }
-        return await fetchSitemap(host: host).availability
+        let result = await fetchSitemap(host: host)
+        SitemapAvailabilityCache.store(result.availability, for: website)
+        let links = sameSiteLinks(in: result.data, baseURL: website)
+        SitemapAvailabilityCache.storeLinks(links, for: website)
+        return result.availability
     }
 
     private func fetchSitemap(host: String) async -> (availability: SitemapAvailability, data: Data?) {

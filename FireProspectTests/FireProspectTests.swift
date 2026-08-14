@@ -63,6 +63,11 @@ final class FireProspectTests: XCTestCase {
         XCTAssertEqual(KeywordExpansion.fallback(for: "Civil Engineering").keywords, ["Civil Engineering"])
     }
 
+    func testLocalModelManifestUsesTheCheckpointFormalName() {
+        XCTAssertEqual(LocalModelService.manifest.displayName, "Gemma 3 1B")
+        XCTAssertEqual(LocalModelService.manifest.repositoryID, "mlx-community/gemma-3-1b-it-4bit")
+    }
+
     func testNoModelImmediatelyUsesOriginalKeyword() async {
         let model = ModelStub(capability: .notInstalled)
         let result = await KeywordExpansionResolver(model: model, timeout: .seconds(1)).resolve("Civil Engineering")
@@ -86,6 +91,19 @@ final class FireProspectTests: XCTestCase {
         XCTAssertEqual(result.expansion.keywords, ["Surveyors"])
         let installCalls = await model.installCallCount
         XCTAssertEqual(installCalls, 0)
+    }
+
+    func testCheckpointValidationAcceptsGemma3AndRejectsOldGemma2Cache() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try Data().write(to: root.appendingPathComponent("model.safetensors"))
+
+        try Data(#"{"model_type":"gemma3_text"}"#.utf8).write(to: root.appendingPathComponent("config.json"))
+        XCTAssertTrue(LocalModelService.isValidCheckpoint(root))
+
+        try Data(#"{"model_type":"gemma2"}"#.utf8).write(to: root.appendingPathComponent("config.json"))
+        XCTAssertFalse(LocalModelService.isValidCheckpoint(root))
     }
 
     func testInferenceFailureAndTimeoutFallBackWithoutFreezing() async {
@@ -121,6 +139,50 @@ final class FireProspectTests: XCTestCase {
             "{\"ready\":true}"
         )
         XCTAssertEqual(LocalModelService.extractJSONObject(from: "plain response"), "plain response")
+    }
+
+    func testPersonnelSelectionAcceptsIndexAndNormalizedLegacyURL() {
+        let candidates = [
+            URL(string: "https://example.com/about")!,
+            URL(string: "https://example.com/our-team/")!
+        ]
+
+        XCTAssertEqual(LocalModelService.resolvePersonnelURL(from: "{\"best_index\":2}", candidates: candidates), candidates[1])
+        XCTAssertEqual(LocalModelService.resolvePersonnelURL(from: "Result: {\"best_url\":\"https://EXAMPLE.com/our-team\"}", candidates: candidates), candidates[1])
+        XCTAssertNil(LocalModelService.resolvePersonnelURL(from: "{\"best_index\":9}", candidates: candidates))
+    }
+
+    func testSitemapAvailabilityCacheRoundTripsByHost() throws {
+        let suite = "SitemapAvailabilityCacheTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let website = URL(string: "https://Example.com/directory")!
+
+        SitemapAvailabilityCache.store(.https, for: website, defaults: defaults)
+        let links = [URL(string: "https://example.com/team")!]
+        SitemapAvailabilityCache.storeLinks(links, for: website, defaults: defaults)
+
+        XCTAssertEqual(SitemapAvailabilityCache.cached(for: URL(string: "http://example.com/other")!, defaults: defaults), .https)
+        XCTAssertEqual(SitemapAvailabilityCache.links(for: website, defaults: defaults), links)
+    }
+
+    @MainActor
+    func testFirecrawlActivityStoreRoundTripsAndCalculatesObservedCredits() throws {
+        let destination = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("json")
+        defer { try? FileManager.default.removeItem(at: destination) }
+        let activity = FirecrawlActivity(
+            website: URL(string: "https://example.com")!,
+            selectedPage: URL(string: "https://example.com/team")!,
+            usedMapFallback: false,
+            creditsBefore: 100,
+            creditsAfter: 67,
+            outcome: "Complete"
+        )
+
+        try FirecrawlActivityStore.append(activity, to: destination)
+
+        XCTAssertEqual(FirecrawlActivityStore.load(from: destination), [activity])
+        XCTAssertEqual(activity.creditsUsed, 33)
     }
 
     func testEnrichmentCandidateAndPageLimitsStayBounded() {

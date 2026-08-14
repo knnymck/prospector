@@ -1,5 +1,58 @@
 import Foundation
 
+struct FirecrawlActivity: Identifiable, Codable, Equatable, Sendable {
+    let id: UUID
+    let occurredAt: Date
+    let website: URL
+    let selectedPage: URL?
+    let usedMapFallback: Bool
+    let creditsBefore: Int?
+    let creditsAfter: Int?
+    let outcome: String
+
+    init(id: UUID = UUID(), occurredAt: Date = Date(), website: URL, selectedPage: URL?, usedMapFallback: Bool, creditsBefore: Int?, creditsAfter: Int?, outcome: String) {
+        self.id = id
+        self.occurredAt = occurredAt
+        self.website = website
+        self.selectedPage = selectedPage
+        self.usedMapFallback = usedMapFallback
+        self.creditsBefore = creditsBefore
+        self.creditsAfter = creditsAfter
+        self.outcome = outcome
+    }
+
+    var creditsUsed: Int? {
+        guard let creditsBefore, let creditsAfter else { return nil }
+        return max(0, creditsBefore - creditsAfter)
+    }
+}
+
+@MainActor
+enum FirecrawlActivityStore {
+    static func defaultURL(fileManager: FileManager = .default) throws -> URL {
+        let directory = try fileManager.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+            .appendingPathComponent("FireProspect", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory.appendingPathComponent("firecrawl-activity.json")
+    }
+
+    static func load(from url: URL? = nil) -> [FirecrawlActivity] {
+        guard let source = try? (url ?? defaultURL()), let data = try? Data(contentsOf: source) else { return [] }
+        return ((try? JSONDecoder().decode([FirecrawlActivity].self, from: data)) ?? []).sorted { $0.occurredAt > $1.occurredAt }
+    }
+
+    static func append(_ activity: FirecrawlActivity, to url: URL? = nil) throws {
+        try save([activity] + load(from: url), to: url)
+    }
+
+    static func save(_ activities: [FirecrawlActivity], to url: URL? = nil) throws {
+        let destination = try (url ?? defaultURL())
+        try JSONEncoder().encode(activities.sorted { $0.occurredAt > $1.occurredAt }).write(to: destination, options: .atomic)
+    }
+
+    static func clear(at url: URL? = nil) throws { try save([], to: url) }
+}
+
 enum FirecrawlError: LocalizedError {
     case missingAPIKey
     case invalidResponse(Int)
@@ -48,7 +101,8 @@ actor FirecrawlService {
         return (decoded.links ?? []).compactMap(URL.init(string:))
     }
 
-    /// The API payload is deliberately constrained to one URL. This is the testing credit guardrail.
+    /// The API payload is deliberately constrained to one URL. Firecrawl may still bill
+    /// multiple usage-based credits for AI extraction; this is a page-count guardrail.
     func extractPersonnel(fromSinglePage url: URL, apiKey: String) async throws -> PersonnelExtraction {
         struct Schema: Encodable {
             let type = "object"

@@ -62,6 +62,7 @@ struct ContentView: View {
         case home
         case search
         case searches
+        case logs
         case settings
         case history(UUID)
 
@@ -72,6 +73,7 @@ struct ContentView: View {
             case .home: "home"
             case .search: "search"
             case .searches: "searches"
+            case .logs: "logs"
             case .settings: "settings"
             case .history(let id): "history.\(id.uuidString)"
             }
@@ -85,6 +87,8 @@ struct ContentView: View {
                 "New Search"
             case .searches:
                 "Searches"
+            case .logs:
+                "Logs"
             case .settings:
                 "Settings"
             case .history(let id):
@@ -100,6 +104,8 @@ struct ContentView: View {
                 "magnifyingglass"
             case .searches:
                 "clock.arrow.circlepath"
+            case .logs:
+                "doc.text.magnifyingglass"
             case .settings:
                 "gearshape"
             case .history:
@@ -131,6 +137,16 @@ struct ContentView: View {
         selectedDestination = .history(entry.id)
         isSearchesExpanded = true
         expandedSearchDays.insert(Calendar.current.startOfDay(for: entry.searchedAt))
+    }
+
+    private func clearSearchHistory() {
+        searchHistory = []
+        searchResults = []
+        currentKeywords = []
+        currentLocations = []
+        expandedSearchDays = []
+        try? SearchHistoryStore.save([])
+        if case .some(.history) = selectedDestination { selectedDestination = .home }
     }
 
     @ViewBuilder
@@ -181,6 +197,7 @@ struct ContentView: View {
                         } label: {
                             destinationRow(.searches)
                         }
+                        destinationRow(.logs)
                     }
                 }
                 .listStyle(.sidebar)
@@ -213,6 +230,8 @@ struct ContentView: View {
                         selectedDestination = .history(entry.id)
                     } openSettings: {
                         selectedDestination = .settings
+                    } clearSearchHistory: {
+                        clearSearchHistory()
                     }
                 case .search:
                     SearchTabView(searchResults: $searchResults, onSearchCompleted: recordSearch)
@@ -222,6 +241,8 @@ struct ContentView: View {
                         keywords: latestHistory?.keywords ?? currentKeywords,
                         locations: latestHistory?.locations ?? currentLocations
                     )
+                case .logs:
+                    FirecrawlLogsView()
                 case .settings:
                     SettingsTabView()
                 case .history:
@@ -264,19 +285,21 @@ struct HomeView: View {
     let searchHistory: [SearchHistoryEntry]
     let openSearch: (SearchHistoryEntry) -> Void
     let openSettings: () -> Void
+    let clearSearchHistory: () -> Void
     @State private var remainingCredits: Int?
     @State private var creditStatus = "Checking monthly usage…"
     @State private var modelAvailability: LocalModelAvailability = .checking
     @State private var modelSetupMessage: String?
     @State private var showingModelSetup = false
+    @State private var confirmingClearHistory = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Welcome back")
+                    Text("Turn local searches into qualified prospects")
                         .font(.largeTitle.weight(.bold))
-                    Text("Review recent work and the services that power your prospecting.")
+                    Text("Find the right businesses, uncover the people behind them, and build an actionable outreach list.")
                         .foregroundStyle(.secondary)
                 }
 
@@ -301,12 +324,12 @@ struct HomeView: View {
                         Label(modelAvailability == .ready ? "Active" : "Not active", systemImage: modelAvailability == .ready ? "checkmark.circle.fill" : "pause.circle")
                             .font(.headline)
                             .foregroundStyle(modelAvailability == .ready ? Color.green : Color.secondary)
-                        Text(LocalModelService.configuredModel)
-                            .font(.title3.monospaced())
+                        Text(LocalModelService.manifest.displayName)
+                            .font(.title3.weight(.semibold))
                         Text(modelAvailability.label)
                             .font(.callout).foregroundStyle(.secondary)
                         if modelAvailability != .ready {
-                            Button("Install Gemma4 2B") { showingModelSetup = true }
+                            Button("Install Gemma 3 1B") { showingModelSetup = true }
                             .buttonStyle(.borderedProminent)
                             .disabled(isInstallingModel)
                             .accessibilityIdentifier("home.setup-local-model")
@@ -320,7 +343,14 @@ struct HomeView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Recent searches").font(.title2.weight(.semibold))
+                    HStack {
+                        Text("Recent searches").font(.title2.weight(.semibold))
+                        Spacer()
+                        if !searchHistory.isEmpty {
+                            Button("Clear", role: .destructive) { confirmingClearHistory = true }
+                                .accessibilityIdentifier("home.clear-search-history")
+                        }
+                    }
                     if searchHistory.isEmpty {
                         ContentUnavailableView("No Recent Searches", systemImage: "clock", description: Text("Completed searches will appear here."))
                             .frame(maxWidth: .infinity, minHeight: 180)
@@ -356,6 +386,12 @@ struct HomeView: View {
         .sheet(isPresented: $showingModelSetup) {
             LocalModelSetupWizard { Task { await refreshStatuses() } }
         }
+        .confirmationDialog("Clear all recent searches?", isPresented: $confirmingClearHistory) {
+            Button("Clear Recent Searches", role: .destructive, action: clearSearchHistory)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes saved search history from this Mac. Exported CSV files are not affected.")
+        }
     }
 
     private func statusCard<Content: View>(title: String, image: String, @ViewBuilder content: () -> Content) -> some View {
@@ -386,6 +422,67 @@ struct HomeView: View {
         } catch {
             remainingCredits = nil
             creditStatus = "Monthly usage is currently unavailable."
+        }
+    }
+}
+
+// MARK: - Firecrawl Logs
+
+struct FirecrawlLogsView: View {
+    @State private var activities: [FirecrawlActivity] = []
+    @State private var confirmingClear = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Firecrawl activity").font(.title2.weight(.semibold))
+                    Text("A local record of enrichment pages submitted to Firecrawl and the credits observed before and after each test.")
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Clear Logs", role: .destructive) { confirmingClear = true }
+                    .disabled(activities.isEmpty)
+            }
+
+            if activities.isEmpty {
+                ContentUnavailableView("No Firecrawl Activity", systemImage: "doc.text.magnifyingglass", description: Text("Test an enrichment from a prospect row to create a log entry."))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List(activities) { activity in
+                    VStack(alignment: .leading, spacing: 7) {
+                        HStack {
+                            Text(activity.website.host() ?? activity.website.absoluteString).font(.headline)
+                            Spacer()
+                            Text(activity.occurredAt.formatted(date: .abbreviated, time: .standard))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        if let selectedPage = activity.selectedPage {
+                            LabeledContent("Page submitted") {
+                                Link(selectedPage.absoluteString, destination: selectedPage).lineLimit(1)
+                            }
+                        } else {
+                            LabeledContent("Page submitted", value: "None")
+                        }
+                        LabeledContent("Discovery", value: activity.usedMapFallback ? "Firecrawl Map fallback" : "Cached/native sitemap or homepage")
+                        LabeledContent("Pages submitted", value: activity.selectedPage == nil ? "0" : "1")
+                        LabeledContent("Credits observed", value: activity.creditsUsed.map(String.init) ?? "Unavailable")
+                        Text(activity.outcome).font(.callout).foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 6)
+                }
+                .listStyle(.inset)
+            }
+        }
+        .padding(24)
+        .accessibilityIdentifier("detail.logs")
+        .task { activities = FirecrawlActivityStore.load() }
+        .confirmationDialog("Clear Firecrawl logs?", isPresented: $confirmingClear) {
+            Button("Clear Logs", role: .destructive) {
+                try? FirecrawlActivityStore.clear()
+                activities = []
+            }
+            Button("Cancel", role: .cancel) {}
         }
     }
 }
@@ -896,7 +993,7 @@ struct SearchTabView: View {
         isSearching = true
         logOutput = "INITIATING CYCLE // Targets: \(targetZips.count) ZIP codes…\n"
         progressText = ""
-        expansionStatus = "Checking and loading Gemma4 2B with MLX…"
+        expansionStatus = "Checking and loading Gemma 3 1B with MLX…"
         acceptedCount = 0
         excludedCount = 0
         warnings = []
@@ -1011,9 +1108,19 @@ struct ProspectsView: View {
     @State private var enrichmentReceipts: [ProspectID: EnrichmentReceipt] = [:]
     @State private var sitemapAvailability: [ProspectID: SitemapAvailability] = [:]
     @State private var isCheckingSitemaps = false
+    @State private var checkedSitemapCount = 0
     @State private var remainingCredits: Int?
     @State private var creditMessage: String?
     @State private var hoveredProspectID: ProspectID?
+
+    init(searchResults: [ProspectRecord], keywords: [String] = [], locations: [String] = []) {
+        self.searchResults = searchResults
+        self.keywords = keywords
+        self.locations = locations
+        _sitemapAvailability = State(initialValue: Dictionary(uniqueKeysWithValues: searchResults.compactMap { prospect in
+            SitemapAvailabilityCache.cached(for: prospect.websiteURL).map { (prospect.id, $0) }
+        }))
+    }
 
     private var rows: [NumberedProspectRow] {
         searchResults.enumerated().map { offset, record in
@@ -1052,7 +1159,7 @@ struct ProspectsView: View {
                 .disabled(searchResults.isEmpty || exportState.isBusy)
 
                 Button(isCheckingSitemaps ? "Checking Sitemaps…" : "Check Sitemaps", systemImage: "network") {
-                    Task { await checkSitemaps() }
+                    Task { await checkSitemaps(force: true) }
                 }
                 .disabled(searchResults.isEmpty || isCheckingSitemaps)
                 .help("Checks /sitemap.xml directly with Swift HTTP. This does not use Firecrawl credits.")
@@ -1061,7 +1168,7 @@ struct ProspectsView: View {
                     pendingProspect = selectedProspect
                 }
                 .disabled(selectedProspect == nil || isEnriching || KeychainHelper.getKey().isEmpty)
-                .help(KeychainHelper.getKey().isEmpty ? "Add a Firecrawl API key in Settings." : "Uses Firecrawl credit for exactly one selected page.")
+                .help(KeychainHelper.getKey().isEmpty ? "Add a Firecrawl API key in Settings." : "Submits exactly one selected page. Firecrawl bills extraction by usage, not a guaranteed single credit.")
             }
 
             if let message = exportState.message {
@@ -1076,6 +1183,18 @@ struct ProspectsView: View {
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
                     .accessibilityIdentifier("prospects.enrichment-status")
+            }
+
+            if isEnriching {
+                ProgressView("Web crawl and personnel extraction in progress…")
+                    .progressViewStyle(.linear)
+                    .accessibilityIdentifier("prospects.enrichment-progress")
+            } else if isCheckingSitemaps {
+                ProgressView(value: Double(checkedSitemapCount), total: Double(max(searchResults.count, 1))) {
+                    Text("Checking sitemaps \(checkedSitemapCount) of \(searchResults.count)")
+                }
+                .progressViewStyle(.linear)
+                .accessibilityIdentifier("prospects.sitemap-progress")
             }
 
             if rows.isEmpty {
@@ -1103,7 +1222,7 @@ struct ProspectsView: View {
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .accessibilityIdentifier("detail.prospects")
-        .alert("Use one Firecrawl extraction credit?", isPresented: Binding(
+        .alert("Submit one page to Firecrawl?", isPresented: Binding(
             get: { pendingProspect != nil },
             set: { if !$0 { pendingProspect = nil } }
         ), presenting: pendingProspect) { prospect in
@@ -1113,11 +1232,11 @@ struct ProspectsView: View {
                 Task { await enrich(prospect) }
             }
         } message: { prospect in
-            Text("Gemma will choose one personnel page for \(prospect.name). Only that page will be submitted to Firecrawl.")
+            Text("Gemma will choose one personnel page for \(prospect.name). Only that page will be submitted, but Firecrawl's AI extraction may consume multiple usage-based credits.")
         }
         .task {
             await refreshCredits()
-            await checkSitemaps()
+            await checkSitemaps(force: false)
         }
     }
 
@@ -1153,7 +1272,7 @@ struct ProspectsView: View {
 
     private var frozenProspectsTable: some View {
         GeometryReader { geometry in
-            let detailWidth = max(52, (geometry.size.width - 354) / 6)
+            let detailWidth = max(140, (geometry.size.width - 354) / 6)
             ScrollView(.vertical) {
                 HStack(alignment: .top, spacing: 0) {
                     VStack(spacing: 0) {
@@ -1165,13 +1284,16 @@ struct ProspectsView: View {
                     .background(Color(nsColor: .windowBackgroundColor))
                     .zIndex(1)
 
-                    VStack(spacing: 0) {
-                        detailRow(values: ["Address", "Phone", "Website", "Team Page", "Found Emails", "Sitemap"], width: detailWidth, isHeader: true)
-                        ForEach(rows) { row in
-                            detailProspectRow(row, width: detailWidth)
+                    ScrollView(.horizontal) {
+                        VStack(spacing: 0) {
+                            detailRow(values: ["Address", "Phone", "Website", "Team Page", "Found Emails", "Sitemap"], width: detailWidth, isHeader: true)
+                            ForEach(rows) { row in
+                                detailProspectRow(row, width: detailWidth)
+                            }
                         }
+                        .fixedSize(horizontal: true, vertical: false)
+                        .background(Color.primary.opacity(0.018))
                     }
-                    .background(Color.primary.opacity(0.018))
                 }
             }
         }
@@ -1274,21 +1396,26 @@ struct ProspectsView: View {
     }
 
     @MainActor
-    private func checkSitemaps() async {
+    private func checkSitemaps(force: Bool) async {
         guard !searchResults.isEmpty else { return }
-        sitemapAvailability = [:]
+        let prospectsToCheck = force ? searchResults : searchResults.filter { sitemapAvailability[$0.id] == nil }
+        guard !prospectsToCheck.isEmpty else { return }
+        if force { sitemapAvailability = [:] }
         isCheckingSitemaps = true
+        checkedSitemapCount = 0
         enrichmentMessage = "FREE DISCOVERY // Checking sitemap.xml directly; no Firecrawl credits are used…"
 
-        await withTaskGroup(of: (ProspectID, SitemapAvailability).self) { group in
-            for prospect in searchResults {
+        await withTaskGroup(of: (ProspectRecord, SitemapAvailability).self) { group in
+            for prospect in prospectsToCheck {
                 group.addTask {
                     let availability = await SiteLinkDiscoveryService.shared.sitemapAvailability(on: prospect.websiteURL)
-                    return (prospect.id, availability)
+                    return (prospect, availability)
                 }
             }
-            for await (id, availability) in group {
-                sitemapAvailability[id] = availability
+            for await (prospect, availability) in group {
+                sitemapAvailability[prospect.id] = availability
+                SitemapAvailabilityCache.store(availability, for: prospect.websiteURL)
+                checkedSitemapCount += 1
             }
         }
 
@@ -1316,6 +1443,7 @@ struct ProspectsView: View {
 
     @MainActor
     private func enrich(_ prospect: ProspectRecord) async {
+        let creditsBefore = remainingCredits
         isEnriching = true
         enrichmentMessage = "FREE DISCOVERY // Checking HTTPS and HTTP sitemap availability…"
         do {
@@ -1325,7 +1453,7 @@ struct ProspectsView: View {
             )
             let enhancementStatus: String
             switch receipt.aiEnhancement {
-            case .completed: enhancementStatus = "COMPLETE // Exactly 1 page submitted to Firecrawl extract"
+            case .completed: enhancementStatus = "COMPLETE // Exactly 1 page submitted; credits are usage-based"
             case .skipped(let reason): enhancementStatus = "NONFATAL // AI personnel enhancements skipped: \(reason.unavailableDescription)"
             }
             enrichmentMessage = """
@@ -1336,9 +1464,28 @@ struct ProspectsView: View {
             PEOPLE // \(receipt.personnel.people.count)
             """
             enrichmentReceipts[prospect.id] = receipt
+            sitemapAvailability[prospect.id] = receipt.discovery.sitemapAvailability
+            SitemapAvailabilityCache.store(receipt.discovery.sitemapAvailability, for: prospect.websiteURL)
             await refreshCredits()
+            try? FirecrawlActivityStore.append(FirecrawlActivity(
+                website: prospect.websiteURL,
+                selectedPage: receipt.selectedURL,
+                usedMapFallback: receipt.usedFirecrawlMap,
+                creditsBefore: creditsBefore,
+                creditsAfter: remainingCredits,
+                outcome: enhancementStatus
+            ))
         } catch {
             enrichmentMessage = "NONFATAL FAILURE // \(error.localizedDescription)"
+            await refreshCredits()
+            try? FirecrawlActivityStore.append(FirecrawlActivity(
+                website: prospect.websiteURL,
+                selectedPage: nil,
+                usedMapFallback: false,
+                creditsBefore: creditsBefore,
+                creditsAfter: remainingCredits,
+                outcome: "Failed: \(error.localizedDescription)"
+            ))
         }
         isEnriching = false
     }
@@ -1559,7 +1706,7 @@ struct SettingsTabView: View {
                 }
                 HStack {
                     Button("Check Again") { Task { await refreshLocalModel() } }
-                    Button("Install Gemma4 2B") { showingModelSetup = true }
+                    Button("Install Gemma 3 1B") { showingModelSetup = true }
                         .buttonStyle(.borderedProminent)
                         .disabled(localModelAvailability == .ready || isInstallingModel)
                         .accessibilityIdentifier("settings.install-local-model")

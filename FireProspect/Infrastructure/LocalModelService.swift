@@ -23,7 +23,7 @@ struct KeywordExpansion: Codable, Equatable, Sendable {
 }
 
 struct LocalModelManifest: Sendable {
-    static let gemma4TwoB = LocalModelManifest(displayName: "Gemma4 2B", repositoryID: "mlx-community/gemma-2-2b-it-4bit", detail: "Apple Silicon optimized • 4-bit • about 1.5 GB")
+    static let gemmaThreeOneB = LocalModelManifest(displayName: "Gemma 3 1B", repositoryID: "mlx-community/gemma-3-1b-it-4bit", detail: "Instruction-tuned • Apple Silicon optimized • 4-bit")
     let displayName: String
     let repositoryID: String
     let detail: String
@@ -51,12 +51,12 @@ enum LocalModelAvailability: Equatable, Sendable {
     case installing(Double?)
     var label: String {
         switch self {
-        case .checking: "Checking Gemma4 2B…"
-        case .ready: "Gemma4 2B ready with MLX"
-        case .modelMissing: "Gemma4 2B not installed"
-        case .cacheInvalid: "Gemma4 2B cache is missing or invalid"
-        case .loadFailed: "Gemma4 2B could not be loaded"
-        case .installing(let progress): progress.map { "Installing Gemma4 2B (\(Int($0 * 100)))%" } ?? "Installing Gemma4 2B…"
+        case .checking: "Checking Gemma 3 1B…"
+        case .ready: "Gemma 3 1B ready with MLX"
+        case .modelMissing: "Gemma 3 1B not installed"
+        case .cacheInvalid: "Gemma 3 1B cache is missing or invalid"
+        case .loadFailed: "Gemma 3 1B could not be loaded"
+        case .installing(let progress): progress.map { "Installing Gemma 3 1B (\(Int($0 * 100)))%" } ?? "Installing Gemma 3 1B…"
         }
     }
 }
@@ -124,7 +124,7 @@ enum LocalModelError: LocalizedError {
     case appleSiliconRequired, installationFailed(String), invalidResponse
     var errorDescription: String? {
         switch self {
-        case .appleSiliconRequired: "Gemma4 2B requires an Apple Silicon Mac (M1 or newer)."
+        case .appleSiliconRequired: "Gemma 3 1B requires an Apple Silicon Mac (M1 or newer)."
         case .installationFailed(let message): "MLX could not install the model: \(message)"
         case .invalidResponse: "The local model returned an invalid response."
         }
@@ -134,13 +134,13 @@ enum LocalModelError: LocalizedError {
 /// Native MLX inference with an explicit local-only boundary. Normal feature calls never use a repository id.
 actor LocalModelService: LocalModelServing {
     static let shared = LocalModelService()
-    static let manifest = LocalModelManifest.gemma4TwoB
-    private static let installedKey = "mlxGemma4TwoBInstalled"
-    private static let checkpointKey = "mlxGemma4TwoBCheckpoint"
+    static let manifest = LocalModelManifest.gemmaThreeOneB
+    // Model-specific keys prevent a previously installed Gemma 2 checkpoint from
+    // being reported as ready after this model migration.
+    private static let installedKey = "mlxGemmaThreeOneBInstalled"
+    private static let checkpointKey = "mlxGemmaThreeOneBCheckpoint"
     private var container: ModelContainer?
     private var loadFailure: String?
-
-    nonisolated static var configuredModel: String { manifest.repositoryID }
 
     /// Fast filesystem verification. A stale preference is never sufficient.
     func capability() -> LocalModelCapability {
@@ -213,13 +213,43 @@ actor LocalModelService: LocalModelServing {
         let bounded = Array(candidates.prefix(30))
         guard !bounded.isEmpty else { return .unavailable(.loadFailed(SiteEnrichmentError.noCandidateLinks.localizedDescription)) }
         let list = bounded.enumerated().map { "\($0.offset + 1). \($0.element.absoluteString)" }.joined(separator: "\n")
-        switch await generateJSONIfAvailable(prompt: "Select the URL most likely to list staff and contacts. Return JSON only: {\"best_url\":\"URL\"}\n\(list)") {
+        switch await generateJSONIfAvailable(prompt: "Select the URL most likely to list staff and contacts. Return JSON only using its numbered position: {\"best_index\":1}\n\(list)") {
         case .unavailable(let reason): return .unavailable(reason)
         case .value(let response):
-            guard let choice = try? JSONDecoder().decode(URLChoice.self, from: Data(response.utf8)),
-                  let selected = bounded.first(where: { $0.absoluteString == choice.bestURL }) else { return .unavailable(.loadFailed(LocalModelError.invalidResponse.localizedDescription)) }
+            guard let selected = Self.resolvePersonnelURL(from: response, candidates: bounded) else {
+                return .unavailable(.loadFailed("Gemma answered, but its personnel-page choice could not be matched to a discovered URL."))
+            }
             return .value(selected)
         }
+    }
+
+    /// Gemma variants may return either the requested one-based index or the older URL schema.
+    /// Accepting both avoids treating harmless URL formatting differences as a model load failure.
+    nonisolated static func resolvePersonnelURL(from response: String, candidates: [URL]) -> URL? {
+        let trimmed = response.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let index = Int(trimmed), candidates.indices.contains(index - 1) { return candidates[index - 1] }
+        if let mentioned = candidates.first(where: { trimmed.localizedCaseInsensitiveContains($0.absoluteString) }) { return mentioned }
+
+        guard let data = extractJSONObject(from: trimmed).data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+
+        let rawIndex = object["best_index"] ?? object["index"]
+        let index: Int? = (rawIndex as? NSNumber)?.intValue ?? (rawIndex as? String).flatMap(Int.init)
+        if let index, candidates.indices.contains(index - 1) { return candidates[index - 1] }
+
+        guard let choice = object["best_url"] as? String else { return nil }
+        if let index = Int(choice), candidates.indices.contains(index - 1) { return candidates[index - 1] }
+        let normalizedChoice = normalizedURLString(choice)
+        return candidates.first { normalizedURLString($0.absoluteString) == normalizedChoice }
+    }
+
+    nonisolated private static func normalizedURLString(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard var components = URLComponents(string: trimmed) else { return trimmed.lowercased() }
+        components.scheme = components.scheme?.lowercased()
+        components.host = components.host?.lowercased()
+        if components.path.count > 1, components.path.hasSuffix("/") { components.path.removeLast() }
+        return (components.string ?? trimmed).lowercased()
     }
 
     private func generateJSONIfAvailable(prompt: String, maximumTokens: Int = 300) async -> LocalModelResult<String> {
@@ -259,7 +289,7 @@ actor LocalModelService: LocalModelServing {
         let configuration = directory.appendingPathComponent("config.json")
         guard let configurationData = fm.contents(atPath: configuration.path),
               let configurationText = String(data: configurationData, encoding: .utf8)?.lowercased(),
-              configurationText.contains("gemma2") || configurationText.contains("gemma-2"),
+              configurationText.contains("gemma3") || configurationText.contains("gemma-3"),
               let files = try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else { return false }
         return files.contains { $0.pathExtension == "safetensors" }
     }
@@ -283,7 +313,6 @@ actor LocalModelService: LocalModelServing {
     }
 
     private struct ExpansionPayload: Decodable { let source: String; let keywords: [String] }
-    private struct URLChoice: Decodable { let bestURL: String; enum CodingKeys: String, CodingKey { case bestURL = "best_url" } }
 }
 
 enum SemanticProspectPolicy {
