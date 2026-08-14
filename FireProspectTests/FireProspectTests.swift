@@ -34,6 +34,51 @@ final class FireProspectTests: XCTestCase {
         XCTAssertEqual(ProspectListStore.load(from: destination).first?.prospects, [record])
     }
 
+    func testSearchAreaKeepsSelectedCityAndDropsHouston() {
+        let tyler = PostalCodeRecord(
+            id: PostalCodeID(rawValue: "75701"),
+            cityName: "Tyler",
+            stateID: StateID(rawValue: "TX"),
+            stateName: "Texas",
+            countyName: "Smith",
+            latitude: 32.3513,
+            longitude: -95.3011
+        )
+        let area = SearchArea(
+            postalCodes: [tyler],
+            selectedCityIDs: [CityID(stateID: StateID(rawValue: "TX"), normalizedName: "Tyler")],
+            selectedStates: [StateID(rawValue: "TX")],
+            includesEveryCityInSelectedStates: false
+        )
+
+        XCTAssertTrue(area.contains(prospect(city: "Tyler", state: "TX", postalCode: "75701", latitude: 32.35, longitude: -95.30)))
+        XCTAssertTrue(area.contains(prospect(city: "Tyler", state: "Texas", postalCode: nil, latitude: 0, longitude: 0)))
+        XCTAssertTrue(area.contains(prospect(city: nil, state: nil, postalCode: "75701-1842", latitude: 0, longitude: 0)))
+        XCTAssertFalse(area.contains(prospect(city: "Houston", state: "TX", postalCode: "77002", latitude: 29.76, longitude: -95.37)))
+        XCTAssertFalse(area.contains(prospect(city: "Houston", state: "Texas", postalCode: nil, latitude: 29.76, longitude: -95.37)))
+    }
+
+    func testSearchAreaAllCitiesInStateIncludesHouston() {
+        let houston = PostalCodeRecord(
+            id: PostalCodeID(rawValue: "77002"),
+            cityName: "Houston",
+            stateID: StateID(rawValue: "TX"),
+            stateName: "Texas",
+            countyName: "Harris",
+            latitude: 29.76,
+            longitude: -95.37
+        )
+        let area = SearchArea(
+            postalCodes: [houston],
+            selectedCityIDs: [],
+            selectedStates: [StateID(rawValue: "TX")],
+            includesEveryCityInSelectedStates: true
+        )
+
+        XCTAssertTrue(area.contains(prospect(city: "Houston", state: "TX", postalCode: "77002", latitude: 29.76, longitude: -95.37)))
+        XCTAssertFalse(area.contains(prospect(city: "Shreveport", state: "LA", postalCode: "71101", latitude: 32.52, longitude: -93.75)))
+    }
+
     func testCityIDIncludesStateAndNormalizesName() {
         let maine = CityID(stateID: StateID(rawValue: "me"), normalizedName: "  Pórtland ")
         let oregon = CityID(stateID: StateID(rawValue: "OR"), normalizedName: "Portland")
@@ -483,6 +528,30 @@ final class FireProspectTests: XCTestCase {
         XCTAssertEqual(loaded.map(\.id), [new.id, old.id])
         XCTAssertEqual(loaded.first?.keywords, new.keywords)
         XCTAssertEqual(loaded.first?.locations, new.locations)
+    }
+
+    private func prospect(
+        city: String?,
+        state: String?,
+        postalCode: String?,
+        latitude: Double,
+        longitude: Double
+    ) -> ProspectCandidate {
+        ProspectCandidate(
+            id: ProspectID(rawValue: "\(city ?? "x").example"),
+            name: city ?? "Business",
+            websiteURL: URL(string: "https://\(city ?? "x").example")!,
+            phoneNumber: nil,
+            address: PostalAddress(street: nil, city: city, state: state, postalCode: postalCode),
+            latitude: latitude,
+            longitude: longitude,
+            provenance: .init(
+                source: .mapKit,
+                query: "hunting",
+                postalCode: PostalCodeID(rawValue: postalCode ?? "00000"),
+                discoveredAt: Timestamp(rawValue: .distantPast)
+            )
+        )
     }
 }
 

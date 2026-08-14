@@ -1,7 +1,7 @@
 import Foundation
 
 actor BundledGeographyRepository {
-    private static let fullStateNames: [String: String] = [
+    nonisolated static let fullStateNames: [String: String] = [
         "AL": "Alabama", "AK": "Alaska", "AZ": "Arizona", "AR": "Arkansas", "CA": "California",
         "CO": "Colorado", "CT": "Connecticut", "DE": "Delaware", "FL": "Florida", "GA": "Georgia",
         "HI": "Hawaii", "ID": "Idaho", "IL": "Illinois", "IN": "Indiana", "IA": "Iowa",
