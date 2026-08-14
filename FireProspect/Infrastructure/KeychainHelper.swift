@@ -2,11 +2,9 @@ import Foundation
 import Security
 
 struct KeychainHelper {
-    // Use an app-specific service in the data-protection keychain. The previous
-    // service ("com.propsector.app") was stored in the legacy file keychain,
-    // whose per-item ACL can prompt again whenever a development build's code
-    // signature changes. Do not query that item here: even attempting a
-    // migration would bring the unwanted password dialog back.
+    // Keep the credential in the default macOS keychain without a keychain
+    // access group. Access groups require a development certificate, which
+    // prevents unsigned local Debug builds from launching.
     static let service = "com.knnymck.FireProspect.firecrawl"
     static let firecrawlKeyAccount = "firecrawl_api_key"
 
@@ -14,8 +12,7 @@ struct KeychainHelper {
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: firecrawlKeyAccount,
-            kSecUseDataProtectionKeychain as String: true
+            kSecAttrAccount as String: firecrawlKeyAccount
         ]
     }
 
