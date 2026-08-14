@@ -1331,6 +1331,47 @@ struct SitemapReviewSheet: View {
     }
 }
 
+struct ContactsReviewSheet: View {
+    let prospect: ProspectRecord
+    let people: [PersonnelExtraction.Person]
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Contacts for \(prospect.name)")
+                        .font(.title2.weight(.semibold))
+                    Text("Each person is on its own row. Select any field to copy it.")
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+            }
+
+            if people.isEmpty {
+                ContentUnavailableView(
+                    "No contacts yet",
+                    systemImage: "person.crop.rectangle",
+                    description: Text("Look up people on this company to see names, emails, and phone numbers here.")
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                Table(people) {
+                    TableColumn("Name") { Text($0.name ?? "—").textSelection(.enabled) }
+                    TableColumn("Title") { Text($0.title ?? "—").textSelection(.enabled) }
+                    TableColumn("Email") { Text($0.email ?? "—").textSelection(.enabled) }
+                    TableColumn("Phone") { Text($0.phone ?? "—").textSelection(.enabled) }
+                }
+            }
+        }
+        .padding(24)
+        .frame(width: 720, height: 480)
+        .accessibilityIdentifier("prospects.contacts-review")
+    }
+}
+
 // MARK: - Prospects
 
 struct ProspectsView: View {
@@ -1359,6 +1400,7 @@ struct ProspectsView: View {
     @State private var findingPersonnelPageID: ProspectID?
     @State private var prospectForNewList: ProspectID?
     @State private var sitemapReviewProspect: ProspectRecord?
+    @State private var contactsReviewProspect: ProspectRecord?
 
     init(searchResults: [ProspectRecord], keywords: [String] = [], locations: [String] = [], lists: Binding<[ProspectList]> = .constant([]), title: String = "Prospects", allowsCrawling: Bool = true) {
         self.searchResults = searchResults
@@ -1518,6 +1560,12 @@ struct ProspectsView: View {
                 useSitemapPage(url, for: prospect)
             }
         }
+        .sheet(item: $contactsReviewProspect) { prospect in
+            ContactsReviewSheet(
+                prospect: prospect,
+                people: enrichmentReceipts[prospect.id]?.personnel.people ?? []
+            )
+        }
     }
 
     private var searchSummary: some View {
@@ -1583,7 +1631,7 @@ struct ProspectsView: View {
     }
 
     private var tableHeaders: [String] {
-        ["Address", "Phone", "Website", "Team Page", "Found Emails", "Personnel Page", "Sitemap"] + (allowsCrawling ? ["Crawl"] : []) + ["List"]
+        ["Address", "Phone", "Website", "Team Page", "Contacts", "Personnel Page", "Sitemap"] + (allowsCrawling ? ["Crawl"] : []) + ["List"]
     }
 
     private func rowBackground(_ id: ProspectID?) -> Color {
@@ -1633,7 +1681,7 @@ struct ProspectsView: View {
             Link(row.prospect.websiteURL.host() ?? row.prospect.websiteURL.absoluteString, destination: row.prospect.websiteURL)
                 .lineLimit(1).frame(width: width, alignment: .leading)
             teamPageCell(for: row, width: width)
-            detailCell(foundEmails(for: row.id), width: width).textSelection(.enabled)
+            contactsCell(for: row, width: width)
             personnelPageCell(for: row, width: width)
             Button("Review") {
                 sitemapReviewProspect = searchResults.first { $0.id == row.id }
@@ -1784,10 +1832,31 @@ struct ProspectsView: View {
         searchResults.first { $0.id == selectedProspectID }
     }
 
-    private func foundEmails(for id: ProspectID) -> String {
-        let emails = enrichmentReceipts[id]?.personnel.people.compactMap(\.email)
-            .filter { !$0.isEmpty } ?? []
-        return emails.isEmpty ? "—" : Array(Set(emails)).sorted().joined(separator: ", ")
+    @ViewBuilder
+    private func contactsCell(for row: NumberedProspectRow, width: CGFloat) -> some View {
+        let count = contactCount(for: row.id)
+        Group {
+            if count == 0 {
+                Text("—").foregroundStyle(.secondary)
+            } else {
+                HStack(spacing: 0) {
+                    Text("(\(count) ")
+                    Button("contact\(count == 1 ? "" : "s")") {
+                        contactsReviewProspect = searchResults.first { $0.id == row.id }
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.tint)
+                    Text(")")
+                }
+                .help("Show every contact found for \(row.prospect.name).")
+                .accessibilityLabel("\(count) contacts for \(row.prospect.name)")
+            }
+        }
+        .frame(width: width, alignment: .leading)
+    }
+
+    private func contactCount(for id: ProspectID) -> Int {
+        enrichmentReceipts[id]?.personnel.people.count ?? 0
     }
 
     @MainActor
