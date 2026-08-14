@@ -50,6 +50,8 @@
 /* Begin PBXFileReference section */
 		96C75D9F302A2648009FADE1 /* FireProspect.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FireProspect.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		96C75DA2302A2648009FADE1 /* FireProspectApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FireProspectApp.swift; sourceTree = "<group>"; };
+		A50000110000000000000001 /* FireProspect.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = FireProspect.entitlements; sourceTree = "<group>"; };
+		A50000120000000000000001 /* FireProspect-Debug.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "FireProspect-Debug.entitlements"; sourceTree = "<group>"; };
 		96C75DA4302A2648009FADE1 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		96C75DA6302A264A009FADE1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		96C75DA9302A264A009FADE1 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
@@ -124,6 +126,8 @@
 			isa = PBXGroup;
 			children = (
 				96C75DA2302A2648009FADE1 /* FireProspectApp.swift */,
+				A50000110000000000000001 /* FireProspect.entitlements */,
+				A50000120000000000000001 /* FireProspect-Debug.entitlements */,
 				96C75DA4302A2648009FADE1 /* ContentView.swift */,
 				A40000110000000000000001 /* LocalModelSetupWizard.swift */,
 				96C75DCF302A2779009FADE1 /* MapKitSearchService.swift */,
@@ -552,7 +556,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = FireProspect/FireProspect.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "FireProspect/FireProspect-Debug.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;

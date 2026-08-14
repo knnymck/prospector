@@ -2,10 +2,12 @@ import Foundation
 import Security
 
 struct KeychainHelper {
-    // Keep the credential in the default macOS keychain without a keychain
-    // access group. Access groups require a development certificate, which
-    // prevents unsigned local Debug builds from launching.
-    static let service = "com.knnymck.FireProspect.firecrawl"
+    // Use the original generic-password Keychain item so existing local
+    // Firecrawl credentials remain readable across development builds. This
+    // may show the macOS Keychain password prompts that previously occurred
+    // when the app launched, but it avoids orphaning the API key under a new
+    // Keychain namespace.
+    static let service = "com.propsector.app"
     static let firecrawlKeyAccount = "firecrawl_api_key"
 
     private static var itemQuery: [String: Any] {
@@ -22,14 +24,10 @@ struct KeychainHelper {
     static func saveKey(_ key: String) -> Bool {
         guard let data = key.data(using: .utf8) else { return false }
 
-        let attributes = [kSecValueData as String: data]
-        let status = SecItemUpdate(itemQuery as CFDictionary, attributes as CFDictionary)
-        if status == errSecSuccess { return true }
-        guard status == errSecItemNotFound else { return false }
-
         var newItem = itemQuery
         newItem[kSecValueData as String] = data
-        newItem[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+
+        SecItemDelete(itemQuery as CFDictionary)
         return SecItemAdd(newItem as CFDictionary, nil) == errSecSuccess
     }
 
