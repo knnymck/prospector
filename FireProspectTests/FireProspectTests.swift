@@ -2,6 +2,38 @@ import XCTest
 @testable import FireProspect
 
 final class FireProspectTests: XCTestCase {
+    func testClearingRecentSearchesDoesNotClearSearchHistory() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let historyURL = directory.appendingPathComponent("history.json")
+        let recentURL = directory.appendingPathComponent("recent.json")
+        let entry = SearchHistoryEntry(results: [])
+
+        try SearchHistoryStore.save([entry], to: historyURL)
+        try RecentSearchStore.save([], to: recentURL)
+
+        XCTAssertEqual(SearchHistoryStore.load(from: historyURL), [entry])
+        XCTAssertEqual(RecentSearchStore.load(fallback: [entry], from: recentURL), [])
+    }
+
+    func testProspectListsPersistAndDoNotDuplicateACompany() throws {
+        let destination = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("json")
+        defer { try? FileManager.default.removeItem(at: destination) }
+        let record = ProspectRecord(
+            id: ProspectID(rawValue: "example.com"), name: "Example", websiteURL: URL(string: "https://example.com")!,
+            phoneNumber: nil, address: PostalAddress(street: nil, city: "Portland", state: "ME", postalCode: "04101"),
+            latitude: 0, longitude: 0, crawlStatus: .notStarted, assignedTeamMemberID: nil, relevance: Relevance(),
+            provenance: [], createdAt: Timestamp(rawValue: .distantPast), updatedAt: Timestamp(rawValue: .distantPast)
+        )
+        let list = ProspectList(name: "Priority")
+        var lists = ProspectListStore.adding(record, to: list.id, in: [list])
+        lists = ProspectListStore.adding(record, to: list.id, in: lists)
+        try ProspectListStore.save(lists, to: destination)
+
+        XCTAssertEqual(ProspectListStore.load(from: destination).first?.prospects, [record])
+    }
+
     func testCityIDIncludesStateAndNormalizesName() {
         let maine = CityID(stateID: StateID(rawValue: "me"), normalizedName: "  Pórtland ")
         let oregon = CityID(stateID: StateID(rawValue: "OR"), normalizedName: "Portland")

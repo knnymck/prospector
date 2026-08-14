@@ -19,17 +19,21 @@ struct KeychainHelper {
         ]
     }
 
-    static func saveKey(_ key: String) {
-        guard let data = key.data(using: .utf8) else { return }
+    /// Saves the credential and reports whether Keychain accepted the write.
+    /// Callers must not claim the app is configured when this returns `false`.
+    @discardableResult
+    static func saveKey(_ key: String) -> Bool {
+        guard let data = key.data(using: .utf8) else { return false }
 
         let attributes = [kSecValueData as String: data]
         let status = SecItemUpdate(itemQuery as CFDictionary, attributes as CFDictionary)
-        guard status == errSecItemNotFound else { return }
+        if status == errSecSuccess { return true }
+        guard status == errSecItemNotFound else { return false }
 
         var newItem = itemQuery
         newItem[kSecValueData as String] = data
         newItem[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        SecItemAdd(newItem as CFDictionary, nil)
+        return SecItemAdd(newItem as CFDictionary, nil) == errSecSuccess
     }
 
     static func getKey() -> String {
