@@ -1103,6 +1103,7 @@ struct ProspectsView: View {
     @State private var exportState: ExportState = .idle
     @State private var enrichmentMessage: String?
     @State private var isEnriching = false
+    @State private var enrichmentProgress = 0.0
     @State private var selectedProspectID: ProspectID?
     @State private var pendingProspect: ProspectRecord?
     @State private var enrichmentReceipts: [ProspectID: EnrichmentReceipt] = [:]
@@ -1112,6 +1113,7 @@ struct ProspectsView: View {
     @State private var remainingCredits: Int?
     @State private var creditMessage: String?
     @State private var hoveredProspectID: ProspectID?
+    @State private var presentedSitemapID: ProspectID?
 
     init(searchResults: [ProspectRecord], keywords: [String] = [], locations: [String] = []) {
         self.searchResults = searchResults
@@ -1186,8 +1188,14 @@ struct ProspectsView: View {
             }
 
             if isEnriching {
-                ProgressView("Web crawl and personnel extraction in progress…")
+                ProgressView(value: enrichmentProgress, total: 1) {
+                    Text("Web crawl and personnel extraction in progress…")
+                } currentValueLabel: {
+                    Text("\(Int(enrichmentProgress * 100))%")
+                        .monospacedDigit()
+                }
                     .progressViewStyle(.linear)
+                    .animation(.linear(duration: 0.25), value: enrichmentProgress)
                     .accessibilityIdentifier("prospects.enrichment-progress")
             } else if isCheckingSitemaps {
                 ProgressView(value: Double(checkedSitemapCount), total: Double(max(searchResults.count, 1))) {
@@ -1357,7 +1365,7 @@ struct ProspectsView: View {
             }
             .frame(width: width, alignment: .leading)
             detailCell(foundEmails(for: row.id), width: width).textSelection(.enabled)
-            detailCell(sitemapStatus(for: row.id), width: width)
+            sitemapCell(for: row, width: width)
         }
         .font(.callout)
         .padding(.horizontal, 12)
@@ -1374,6 +1382,68 @@ struct ProspectsView: View {
         Text(value).lineLimit(1).frame(width: width, alignment: .leading)
     }
 
+    @ViewBuilder
+    private func sitemapCell(for row: NumberedProspectRow, width: CGFloat) -> some View {
+        if let availability = sitemapAvailability(for: row.id), availability != .unavailable {
+            Button("Sitemap") {
+                presentedSitemapID = row.id
+            }
+            .buttonStyle(.link)
+            .frame(width: width, alignment: .leading)
+            .accessibilityLabel("Show sitemap for \(row.prospect.name)")
+            .popover(isPresented: Binding(
+                get: { presentedSitemapID == row.id },
+                set: { if !$0 { presentedSitemapID = nil } }
+            ), arrowEdge: .bottom) {
+                sitemapPreview(for: row, availability: availability)
+            }
+        } else {
+            detailCell(sitemapStatus(for: row.id), width: width)
+        }
+    }
+
+    private func sitemapPreview(for row: NumberedProspectRow, availability: SitemapAvailability) -> some View {
+        let sitemapURL = sitemapURL(for: row.prospect.websiteURL, availability: availability)
+        let discoveredLinks = SitemapAvailabilityCache.links(for: row.prospect.websiteURL)
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("Sitemap")
+                .font(.headline)
+            Text(row.prospect.websiteURL.host() ?? row.prospect.name)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Link("Open sitemap.xml", destination: sitemapURL)
+            Divider()
+            if discoveredLinks.isEmpty {
+                Text("The sitemap was found, but it did not contain any page URLs to preview.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                        ForEach(discoveredLinks, id: \.absoluteString) { url in
+                            Link(url.absoluteString, destination: url)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                }
+                .frame(height: min(CGFloat(discoveredLinks.count) * 27, 240))
+            }
+        }
+        .padding(16)
+        .frame(width: 440, alignment: .leading)
+    }
+
+    private func sitemapURL(for website: URL, availability: SitemapAvailability) -> URL {
+        var components = URLComponents(url: website, resolvingAgainstBaseURL: false)!
+        components.scheme = availability == .httpOnly ? "http" : "https"
+        components.path = "/sitemap.xml"
+        components.query = nil
+        components.fragment = nil
+        return components.url!
+    }
+
     private var selectedProspect: ProspectRecord? {
         searchResults.first { $0.id == selectedProspectID }
     }
@@ -1385,14 +1455,17 @@ struct ProspectsView: View {
     }
 
     private func sitemapStatus(for id: ProspectID) -> String {
-        guard let availability = enrichmentReceipts[id]?.discovery.sitemapAvailability ?? sitemapAvailability[id] else {
+        guard let availability = sitemapAvailability(for: id) else {
             return isCheckingSitemaps ? "Checking…" : "Not checked"
         }
         switch availability {
-        case .https: return "Found (HTTPS)"
-        case .httpOnly: return "Found (HTTP only)"
+        case .https, .httpOnly: return "Sitemap"
         case .unavailable: return "Not found"
         }
+    }
+
+    private func sitemapAvailability(for id: ProspectID) -> SitemapAvailability? {
+        enrichmentReceipts[id]?.discovery.sitemapAvailability ?? sitemapAvailability[id]
     }
 
     @MainActor
@@ -1445,6 +1518,14 @@ struct ProspectsView: View {
     private func enrich(_ prospect: ProspectRecord) async {
         let creditsBefore = remainingCredits
         isEnriching = true
+        enrichmentProgress = 0
+        let progressTask = Task { @MainActor in
+            while !Task.isCancelled && enrichmentProgress < 0.95 {
+                try? await Task.sleep(for: .milliseconds(250))
+                guard !Task.isCancelled else { return }
+                enrichmentProgress = min(enrichmentProgress + 0.015, 0.95)
+            }
+        }
         enrichmentMessage = "FREE DISCOVERY // Checking HTTPS and HTTP sitemap availability…"
         do {
             let receipt = try await SiteEnrichmentService.shared.enrichOnePage(
@@ -1487,6 +1568,9 @@ struct ProspectsView: View {
                 outcome: "Failed: \(error.localizedDescription)"
             ))
         }
+        progressTask.cancel()
+        enrichmentProgress = 1
+        try? await Task.sleep(for: .milliseconds(350))
         isEnriching = false
     }
 
