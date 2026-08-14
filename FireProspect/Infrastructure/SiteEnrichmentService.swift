@@ -109,7 +109,9 @@ actor SiteLinkDiscoveryService: SiteLinkDiscovering {
     func discover(on website: URL) async throws -> LinkDiscovery {
         guard let host = website.host, isPublicHost(host) else { throw SiteEnrichmentError.invalidWebsite }
         let homepageData = await fetch(website)
-        let links = Array(Self.navigationLinks(in: homepageData, baseURL: website).prefix(Self.maximumCandidateCount))
+        let navigation = Self.navigationLinks(in: homepageData, baseURL: website)
+        let pageHints = Self.personnelHintLinks(in: homepageData, baseURL: website)
+        let links = Array((navigation + pageHints).prefix(Self.maximumCandidateCount))
         return LinkDiscovery(
             links: links,
             sitemapAvailability: SitemapAvailabilityCache.cached(for: website) ?? .unavailable,
@@ -230,6 +232,34 @@ actor SiteLinkDiscoveryService: SiteLinkDiscovering {
         }.map(\.url)
     }
 
+    /// Same-site homepage links whose path or label looks like About / Team, including links outside header/nav/footer.
+    nonisolated static func personnelHintLinks(in data: Data?, baseURL: URL) -> [URL] {
+        guard let data, let html = String(data: data, encoding: .utf8), let baseHost = baseURL.host?.lowercased() else { return [] }
+        let anchorPattern = #"(?is)<a\b[^>]*href\s*=\s*[\"']([^\"'#]+)[\"'][^>]*>(.*?)</a\s*>"#
+        guard let anchors = try? NSRegularExpression(pattern: anchorPattern) else { return [] }
+        let htmlRange = NSRange(html.startIndex..., in: html)
+        var seen = Set<String>()
+        var links: [URL] = []
+        for anchor in anchors.matches(in: html, range: htmlRange) {
+            guard let hrefRange = Range(anchor.range(at: 1), in: html),
+                  let labelRange = Range(anchor.range(at: 2), in: html) else { continue }
+            let href = String(html[hrefRange]).replacingOccurrences(of: "&amp;", with: "&")
+            guard let url = URL(string: href, relativeTo: baseURL)?.absoluteURL,
+                  url.host?.lowercased() == baseHost else { continue }
+            var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+            components?.fragment = nil
+            guard let normalizedURL = components?.url, seen.insert(normalizedURL.absoluteString).inserted else { continue }
+            let label = String(html[labelRange])
+                .replacingOccurrences(of: #"<[^>]+>"#, with: " ", options: .regularExpression)
+                .lowercased()
+            let evidence = "\(label) \(normalizedURL.path)".lowercased()
+            let hints = ["our team", "meet our team", "about us", "about", "leadership", "staff", "people", "team"]
+            guard hints.contains(where: evidence.contains) else { continue }
+            links.append(normalizedURL)
+        }
+        return links
+    }
+
     private func isPublicHost(_ host: String) -> Bool {
         let host = host.lowercased()
         guard host != "localhost", !host.hasSuffix(".local") else { return false }
@@ -290,6 +320,58 @@ enum AIEnhancementOutcome: Sendable, Equatable {
     case skipped(LocalModelCapability)
 }
 
+enum PersonnelPageCandidates {
+    static let maximumCount = 30
+
+    static func ranked(navigation: [URL], sitemap: [URL]) -> [URL] {
+        var seen = Set<String>()
+        let scored: [(URL, Int)] = (navigation + sitemap).compactMap { url in
+            let key = normalized(url)
+            guard seen.insert(key).inserted else { return nil }
+            let value = score(url)
+            guard value >= 0 else { return nil }
+            return (url, value)
+        }
+        return scored.sorted { lhs, rhs in
+            lhs.1 == rhs.1 ? lhs.0.absoluteString < rhs.0.absoluteString : lhs.1 > rhs.1
+        }.prefix(maximumCount).map(\.0)
+    }
+
+    static func preferredListing(in urls: [URL]) -> URL? {
+        urls.first { score($0) >= 60 }
+    }
+
+    static func score(_ url: URL) -> Int {
+        let path = url.path.lowercased()
+        let trimmed = path.count > 1 && path.hasSuffix("/") ? String(path.dropLast()) : path
+        let parts = trimmed.split(separator: "/").map(String.init)
+        if parts.contains(where: { ["project", "projects", "product", "products", "wp-content", "wp-json", "intranet"].contains($0) }) {
+            return -1
+        }
+        if [["our-team"], ["our-people"], ["meet-the-team"], ["meet-our-team"]].contains(parts) { return 100 }
+        if [["team"], ["staff"], ["people"], ["leadership"]].contains(parts) { return 90 }
+        if parts.last == "about" || parts == ["about-us"] || parts == ["about", "us"] { return 75 }
+        if parts.contains(where: { ["leadership", "staff", "professionals"].contains($0) }) { return 70 }
+        if parts.contains("about") { return 65 }
+        if parts.first == "team", parts.count >= 2 { return 45 }
+        if parts.contains("team") { return 50 }
+        if parts.contains("contact") || parts.contains("careers") { return 15 }
+        return 8
+    }
+
+    private static func normalized(_ url: URL) -> String {
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        components?.fragment = nil
+        components?.query = nil
+        components?.scheme = components?.scheme?.lowercased()
+        components?.host = components?.host?.lowercased()
+        if let path = components?.path, path.count > 1, path.hasSuffix("/") {
+            components?.path.removeLast()
+        }
+        return components?.string ?? url.absoluteString.lowercased()
+    }
+}
+
 /// Orchestrates free homepage-navigation discovery, local selection, and exactly one extract URL.
 actor SiteEnrichmentService {
     static let shared = SiteEnrichmentService()
@@ -304,28 +386,39 @@ actor SiteEnrichmentService {
     func findPersonnelPage(website: URL) async throws -> EnrichmentReceipt {
         async let sitemapLoad: SitemapSnapshot = discoveryService.loadSitemap(for: website)
         let discovery = try await discoveryService.discover(on: website)
-        _ = await sitemapLoad
+        let sitemap = await sitemapLoad
+        let candidates = PersonnelPageCandidates.ranked(navigation: discovery.links, sitemap: sitemap.urls)
+        let merged = LinkDiscovery(
+            links: candidates,
+            sitemapAvailability: sitemap.availability == .unavailable ? discovery.sitemapAvailability : sitemap.availability,
+            usedHomepage: discovery.usedHomepage
+        )
+        guard !candidates.isEmpty else { throw SiteEnrichmentError.noCandidateLinks }
+
         let capability = await model.capability()
+        let preferred = PersonnelPageCandidates.preferredListing(in: candidates)
         guard case .available = capability else {
-            // Homepage navigation discovery above is useful independently. Do not select a
-            // personnel page when local reasoning is unavailable.
             return EnrichmentReceipt(
-                selectedURL: nil,
-                discovery: discovery,
+                selectedURL: preferred,
+                discovery: merged,
                 usedFirecrawlMap: false,
                 personnel: PersonnelExtraction(people: []),
                 aiEnhancement: .skipped(capability)
             )
         }
-        let candidates = discovery.links
-        guard !candidates.isEmpty else { throw SiteEnrichmentError.noCandidateLinks }
         let selection = await model.selectPersonnelURLIfAvailable(from: candidates)
-        guard case .value(let selected) = selection else {
-            let reason: LocalModelCapability
-            if case .unavailable(let unavailable) = selection { reason = unavailable } else { reason = .loadFailed("Personnel selection failed.") }
-            return EnrichmentReceipt(selectedURL: nil, discovery: discovery, usedFirecrawlMap: false, personnel: PersonnelExtraction(people: []), aiEnhancement: .skipped(reason))
+        if case .value(let selected) = selection {
+            return EnrichmentReceipt(selectedURL: selected, discovery: merged, usedFirecrawlMap: false, personnel: PersonnelExtraction(people: []), aiEnhancement: .completed)
         }
-        return EnrichmentReceipt(selectedURL: selected, discovery: discovery, usedFirecrawlMap: false, personnel: PersonnelExtraction(people: []), aiEnhancement: .completed)
+        let reason: LocalModelCapability
+        if case .unavailable(let unavailable) = selection { reason = unavailable } else { reason = .loadFailed("Personnel selection failed.") }
+        return EnrichmentReceipt(
+            selectedURL: preferred,
+            discovery: merged,
+            usedFirecrawlMap: false,
+            personnel: PersonnelExtraction(people: []),
+            aiEnhancement: preferred == nil ? .skipped(reason) : .completed
+        )
     }
 
     func enrichOnePage(website: URL, apiKey: String, knownTeamPage: URL? = nil) async throws -> EnrichmentReceipt {

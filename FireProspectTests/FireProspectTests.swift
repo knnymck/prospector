@@ -56,6 +56,7 @@ final class FireProspectTests: XCTestCase {
         XCTAssertTrue(area.contains(prospect(city: nil, state: nil, postalCode: "75701-1842", latitude: 0, longitude: 0)))
         XCTAssertFalse(area.contains(prospect(city: "Houston", state: "TX", postalCode: "77002", latitude: 29.76, longitude: -95.37)))
         XCTAssertFalse(area.contains(prospect(city: "Houston", state: "Texas", postalCode: nil, latitude: 29.76, longitude: -95.37)))
+        XCTAssertTrue(area.contains(prospect(city: "Whitehouse", state: "TX", postalCode: "75791", latitude: 32.2268, longitude: -95.2255)))
     }
 
     func testSearchAreaAllCitiesInStateIncludesHouston() {
@@ -233,17 +234,48 @@ final class FireProspectTests: XCTestCase {
     }
 
     func testEnrichmentWithoutModelRetainsDiscoveryAndSkipsAI() async throws {
-        let link = URL(string: "https://example.com/team")!
+        let link = URL(string: "https://example.com/services")!
         let discovery = DiscoveryStub(result: LinkDiscovery(links: [link], sitemapAvailability: .https, usedHomepage: false))
         let model = ModelStub(capability: .notInstalled)
         let receipt = try await SiteEnrichmentService(model: model, discoveryService: discovery)
-            .enrichOnePage(website: URL(string: "https://example.com")!, apiKey: "unused")
+            .findPersonnelPage(website: URL(string: "https://example.com")!)
         XCTAssertEqual(receipt.discovery.links, [link])
         XCTAssertNil(receipt.selectedURL)
         XCTAssertEqual(receipt.aiEnhancement, .skipped(.notInstalled))
-        XCTAssertEqual(receipt.personnel.people, [])
         let selectionCalls = await model.selectionCallCount
         XCTAssertEqual(selectionCalls, 0)
+    }
+
+    func testFindPersonnelPageUsesSitemapAboutWhenNavigationOmitsIt() async throws {
+        let about = URL(string: "https://www.wgkengineers.com/about/")!
+        let person = URL(string: "https://www.wgkengineers.com/team/bill-owen-pe/")!
+        let project = URL(string: "https://www.wgkengineers.com/project/bridge/")!
+        let contact = URL(string: "https://www.wgkengineers.com/contact/")!
+        let discovery = DiscoveryStub(
+            result: LinkDiscovery(links: [contact], sitemapAvailability: .unavailable, usedHomepage: true),
+            sitemap: SitemapSnapshot(availability: .https, urls: [project, person, about, contact], fetchedAt: .distantPast)
+        )
+        let model = ModelStub(capability: .notInstalled)
+        let receipt = try await SiteEnrichmentService(model: model, discoveryService: discovery)
+            .findPersonnelPage(website: URL(string: "https://www.wgkengineers.com/")!)
+        XCTAssertEqual(receipt.selectedURL, about)
+        XCTAssertEqual(receipt.discovery.links.first, about)
+        XCTAssertFalse(receipt.discovery.links.contains(project))
+        XCTAssertEqual(receipt.aiEnhancement, .skipped(.notInstalled))
+    }
+
+    func testPersonnelPageCandidatesRankAboutAboveProjectsAndPeoplePages() {
+        let about = URL(string: "https://www.wgkengineers.com/about/")!
+        let person = URL(string: "https://www.wgkengineers.com/team/gregory-gearhart-pe-bcee/")!
+        let project = URL(string: "https://www.wgkengineers.com/project/bridge/")!
+        let ranked = PersonnelPageCandidates.ranked(
+            navigation: [URL(string: "https://www.wgkengineers.com/contact/")!],
+            sitemap: [project, person, about]
+        )
+        XCTAssertEqual(ranked.first, about)
+        XCTAssertTrue(ranked.contains(person))
+        XCTAssertFalse(ranked.contains(project))
+        XCTAssertEqual(PersonnelPageCandidates.preferredListing(in: ranked), about)
     }
 
     func testLocalModelExtractsJSONFromChatOutput() {
@@ -333,6 +365,23 @@ final class FireProspectTests: XCTestCase {
         XCTAssertTrue(links.contains(URL(string: "https://example.com/about")!))
         XCTAssertFalse(links.contains(URL(string: "https://example.com/hidden-team")!))
         XCTAssertFalse(links.contains(URL(string: "https://other.example/people")!))
+    }
+
+    func testHomepagePersonnelHintsIncludeAboutOutsideTheNav() {
+        let html = """
+        <html><body>
+          <header><a href="/contact">Consult an Engineer</a></header>
+          <main>
+            <h3>WGK Team</h3>
+            <ul><li><a href="/about/">About Us</a></li></ul>
+          </main>
+        </body></html>
+        """
+        let links = SiteLinkDiscoveryService.personnelHintLinks(
+            in: Data(html.utf8),
+            baseURL: URL(string: "https://www.wgkengineers.com")!
+        )
+        XCTAssertEqual(links, [URL(string: "https://www.wgkengineers.com/about/")!])
     }
 
     func testTeamPageParserFindsProfileLinksAndDecodesObfuscatedMailto() {
