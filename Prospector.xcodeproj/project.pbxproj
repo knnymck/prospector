@@ -24,6 +24,9 @@
 		A20000030000000000000001 /* MapKitProspectAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000130000000000000001 /* MapKitProspectAdapter.swift */; };
 		A30000020000000000000001 /* SiteEnrichmentService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000120000000000000001 /* SiteEnrichmentService.swift */; };
 		A30000010000000000000001 /* LocalModelService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000110000000000000001 /* LocalModelService.swift */; };
+		A40000010000000000000001 /* LocalModelSetupWizard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000110000000000000001 /* LocalModelSetupWizard.swift */; };
+		A40000020000000000000001 /* MLXLLM in Frameworks */ = {isa = PBXBuildFile; productRef = A40000310000000000000001 /* MLXLLM */; };
+		A40000030000000000000001 /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = A40000320000000000000001 /* MLXLMCommon */; };
 		A10000030000000000000001 /* GeographyDataMetadata.json in Resources */ = {isa = PBXBuildFile; fileRef = A10000130000000000000001 /* GeographyDataMetadata.json */; };
 /* End PBXBuildFile section */
 
@@ -66,6 +69,7 @@
 		A20000130000000000000001 /* MapKitProspectAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapKitProspectAdapter.swift; sourceTree = "<group>"; };
 		A30000120000000000000001 /* SiteEnrichmentService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiteEnrichmentService.swift; sourceTree = "<group>"; };
 		A30000110000000000000001 /* LocalModelService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalModelService.swift; sourceTree = "<group>"; };
+		A40000110000000000000001 /* LocalModelSetupWizard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalModelSetupWizard.swift; sourceTree = "<group>"; };
 		A10000130000000000000001 /* GeographyDataMetadata.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = GeographyDataMetadata.json; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -74,6 +78,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A40000020000000000000001 /* MLXLLM in Frameworks */,
+				A40000030000000000000001 /* MLXLMCommon in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -119,6 +125,7 @@
 			children = (
 				96C75DA2302A2648009FADE1 /* FireProspectApp.swift */,
 				96C75DA4302A2648009FADE1 /* ContentView.swift */,
+				A40000110000000000000001 /* LocalModelSetupWizard.swift */,
 				96C75DCF302A2779009FADE1 /* MapKitSearchService.swift */,
 				A10000210000000000000001 /* Domain */,
 				96C75DDE302CF371009FADE1 /* Infrastructure */,
@@ -222,7 +229,9 @@
 			);
 			dependencies = (
 			);
-			packageProductDependencies = ( /* No external Swift package dependencies. */
+			packageProductDependencies = (
+				A40000310000000000000001 /* MLXLLM */,
+				A40000320000000000000001 /* MLXLMCommon */,
 			);
 			name = FireProspect;
 			productName = FireProspect;
@@ -302,6 +311,9 @@
 			);
 			mainGroup = 96C75D96302A2648009FADE1;
 			productRefGroup = 96C75DA0302A2648009FADE1 /* Products */;
+			packageReferences = (
+				A40000210000000000000001 /* XCRemoteSwiftPackageReference "mlx-swift-examples" */,
+			);
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -349,6 +361,7 @@
 				96C75DD9302CF371009FADE1 /* FirecrawlService.swift in Sources */,
 				96C75DD0302A2779009FADE1 /* MapKitSearchService.swift in Sources */,
 				A30000010000000000000001 /* LocalModelService.swift in Sources */,
+				A40000010000000000000001 /* LocalModelSetupWizard.swift in Sources */,
 				A30000020000000000000001 /* SiteEnrichmentService.swift in Sources */,
 				96C75DA3302A2648009FADE1 /* FireProspectApp.swift in Sources */,
 				A10000010000000000000001 /* Geography.swift in Sources */,
@@ -390,6 +403,30 @@
 			targetProxy = 96C75DBB302A264A009FADE1 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		A40000210000000000000001 /* XCRemoteSwiftPackageReference "mlx-swift-examples" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/ml-explore/mlx-swift-examples";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.21.2;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A40000310000000000000001 /* MLXLLM */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A40000210000000000000001 /* XCRemoteSwiftPackageReference "mlx-swift-examples" */;
+			productName = MLXLLM;
+		};
+		A40000320000000000000001 /* MLXLMCommon */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A40000210000000000000001 /* XCRemoteSwiftPackageReference "mlx-swift-examples" */;
+			productName = MLXLMCommon;
+		};
+/* End XCSwiftPackageProductDependency section */
 
 /* Begin XCBuildConfiguration section */
 		96C75DC2302A264A009FADE1 /* Debug */ = {
