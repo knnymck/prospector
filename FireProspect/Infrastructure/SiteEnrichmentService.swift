@@ -1,6 +1,6 @@
 import Foundation
 
-enum SitemapAvailability: String, Sendable {
+enum SitemapAvailability: String, Sendable, Equatable {
     case https = "HTTPS sitemap"
     case httpOnly = "HTTP-only sitemap"
     case unavailable = "No sitemap found"
@@ -34,12 +34,9 @@ actor SiteLinkDiscoveryService {
 
     func discover(on website: URL) async throws -> LinkDiscovery {
         guard let host = website.host, isPublicHost(host) else { throw SiteEnrichmentError.invalidWebsite }
-        async let httpsResult = fetch(URL(string: "https://\(host)/sitemap.xml")!)
-        async let httpResult = fetch(URL(string: "http://\(host)/sitemap.xml")!)
-        let (httpsData, httpData) = await (httpsResult, httpResult)
+        let (availability, sitemapData) = await fetchSitemap(host: host)
 
-        let availability: SitemapAvailability = httpsData != nil ? .https : (httpData != nil ? .httpOnly : .unavailable)
-        let sitemapLinks = sameSiteLinks(in: httpsData ?? httpData, baseURL: website)
+        let sitemapLinks = sameSiteLinks(in: sitemapData, baseURL: website)
         if !sitemapLinks.isEmpty {
             return LinkDiscovery(links: Array(sitemapLinks.prefix(Self.maximumCandidateCount)), sitemapAvailability: availability, usedHomepage: false)
         }
@@ -47,6 +44,26 @@ actor SiteLinkDiscoveryService {
         let homepageData = await fetch(website)
         let homepageLinks = sameSiteLinks(in: homepageData, baseURL: website)
         return LinkDiscovery(links: Array(homepageLinks.prefix(Self.maximumCandidateCount)), sitemapAvailability: availability, usedHomepage: true)
+    }
+
+    /// Checks the conventional sitemap endpoint using URLSession only. This path never calls Firecrawl.
+    func sitemapAvailability(on website: URL) async -> SitemapAvailability {
+        guard let host = website.host, isPublicHost(host) else { return .unavailable }
+        return await fetchSitemap(host: host).availability
+    }
+
+    private func fetchSitemap(host: String) async -> (availability: SitemapAvailability, data: Data?) {
+        async let httpsResult = fetch(URL(string: "https://\(host)/sitemap.xml")!)
+        async let httpResult = fetch(URL(string: "http://\(host)/sitemap.xml")!)
+        let (httpsData, httpData) = await (httpsResult, httpResult)
+        if let httpsData, Self.isSitemapDocument(httpsData) { return (.https, httpsData) }
+        if let httpData, Self.isSitemapDocument(httpData) { return (.httpOnly, httpData) }
+        return (.unavailable, nil)
+    }
+
+    static func isSitemapDocument(_ data: Data) -> Bool {
+        guard let text = String(data: data.prefix(4_096), encoding: .utf8)?.lowercased() else { return false }
+        return text.contains("<urlset") || text.contains("<sitemapindex")
     }
 
     private func isPublicHost(_ host: String) -> Bool {

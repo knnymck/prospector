@@ -267,6 +267,7 @@ struct HomeView: View {
     @State private var remainingCredits: Int?
     @State private var creditStatus = "Checking monthly usage…"
     @State private var modelAvailability: LocalModelAvailability = .checking
+    @State private var modelSetupMessage: String?
 
     var body: some View {
         ScrollView {
@@ -303,6 +304,19 @@ struct HomeView: View {
                             .font(.title3.monospaced())
                         Text(modelAvailability.label)
                             .font(.callout).foregroundStyle(.secondary)
+                        if modelAvailability != .ready {
+                            Button("Set Up Gemma 4 2B") {
+                                Task { await setUpLocalModel() }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(isInstallingModel)
+                            .accessibilityIdentifier("home.setup-local-model")
+                        }
+                        if let modelSetupMessage {
+                            Text(modelSetupMessage)
+                                .font(.caption)
+                                .foregroundStyle(modelAvailability == .runtimeUnavailable ? Color.orange : Color.secondary)
+                        }
                     }
                 }
 
@@ -354,6 +368,27 @@ struct HomeView: View {
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.12)))
     }
 
+    private var isInstallingModel: Bool {
+        if case .installing = modelAvailability { return true }
+        return false
+    }
+
+    @MainActor
+    private func setUpLocalModel() async {
+        modelAvailability = .installing(nil)
+        modelSetupMessage = nil
+        do {
+            try await LocalModelService.shared.ensureInstalled { progress in
+                await MainActor.run { self.modelAvailability = .installing(progress) }
+            }
+            modelAvailability = .ready
+            modelSetupMessage = "Gemma is installed locally and ready to use."
+        } catch {
+            modelAvailability = await LocalModelService.shared.availability()
+            modelSetupMessage = error.localizedDescription
+        }
+    }
+
     @MainActor
     private func refreshStatuses() async {
         modelAvailability = await LocalModelService.shared.availability()
@@ -385,6 +420,7 @@ struct SearchTabView: View {
     @State private var isCityInputHovered = false
     
     @State private var selectedCityIDs: Set<CityID> = []
+    @State private var selectedCityRecords: [CityID: City] = [:]
     @State private var selectAllCities = false
     @State private var allStates: [StateRecord] = []
     @State private var citySuggestions: [City] = []
@@ -409,7 +445,9 @@ struct SearchTabView: View {
         }
     }
 
-    private var filteredCities: [City] { citySuggestions }
+    private var filteredCities: [City] {
+        citySuggestions.filter { !selectedCityIDs.contains($0.id) }
+    }
 
     private var searchScope: SearchScope {
         selectAllCities ? .allCities(in: selectedStates) : .selectedCities(selectedCityIDs)
@@ -451,6 +489,9 @@ struct SearchTabView: View {
         VStack(alignment: .leading, spacing: 12) {
             Label("Search area", systemImage: "map")
                 .font(.headline)
+            Text("Choose one or more states, then select individual cities or include every city in those states.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
             
             HStack(alignment: .top, spacing: 20) {
                 targetStatesColumn
@@ -465,11 +506,15 @@ struct SearchTabView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("States")
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .font(.subheadline.weight(.semibold))
                 Spacer()
-                Text("\(selectedStates.count) ACTIVE")
-                    .font(.system(size: 9, design: .monospaced))
+                if !selectedStates.isEmpty {
+                    Button("Clear") { clearStates() }
+                        .buttonStyle(.link)
+                        .controlSize(.small)
+                }
+                Text("\(selectedStates.count) selected")
+                    .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
             
@@ -477,9 +522,9 @@ struct SearchTabView: View {
                 TextField("Search states", text: $stateSearch)
                 .textFieldStyle(.plain)
                 .focused($isStateDropdownFocused)
-                .font(.system(size: 11, design: .default))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
+                .font(.body)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
                 .background(Color.accentColor.opacity(isStateDropdownFocused ? 0.08 : (isStateInputHovered ? 0.04 : 0)))
                 .overlay(
                     RoundedRectangle(cornerRadius: 4)
@@ -488,19 +533,21 @@ struct SearchTabView: View {
                 .onHover { isStateInputHovered = $0 }
                 .animation(.easeOut(duration: 0.15), value: isStateDropdownFocused)
                 .animation(.easeOut(duration: 0.15), value: isStateInputHovered)
+                .onSubmit {
+                    if let first = filteredStateSuggestions.first { addState(first.id) }
+                }
                 
                 if isStateDropdownFocused || !stateSearch.isEmpty {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 2) {
                             ForEach(filteredStateSuggestions) { state in
                                 PickerSuggestionRow(label: state.name, systemImage: nil) {
-                                    selectedStates.insert(state.id)
-                                    stateSearch = ""
+                                    addState(state.id)
                                 }
                             }
                         }
                     }
-                    .frame(maxHeight: 100)
+                    .frame(maxHeight: 160)
                     .background(Color(nsColor: .controlBackgroundColor))
                     .overlay(
                         Rectangle()
@@ -521,30 +568,32 @@ struct SearchTabView: View {
                 }
             }
         }
-        .frame(maxWidth: .infinity)
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.primary.opacity(0.12)))
     }
     
     private var targetCitiesColumn: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("Cities")
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .font(.subheadline.weight(.semibold))
                 
                 Spacer()
                 
                 Toggle("All cities", isOn: $selectAllCities)
                     .toggleStyle(.checkbox)
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .font(.caption.weight(.semibold))
                     .disabled(selectedStates.isEmpty)
             }
             
             TextField(selectedStates.isEmpty ? "Select a state first" : "Search cities", text: $citySearch)
                 .textFieldStyle(.plain)
                 .focused($isCityDropdownFocused)
-                .font(.system(size: 11, design: .default))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
+                .font(.body)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
                 .background(Color.accentColor.opacity(isCityDropdownFocused ? 0.08 : (isCityInputHovered ? 0.04 : 0)))
                 .overlay(
                     RoundedRectangle(cornerRadius: 4)
@@ -555,6 +604,9 @@ struct SearchTabView: View {
                 .animation(.easeOut(duration: 0.15), value: isCityInputHovered)
                 .disabled(selectAllCities || selectedStates.isEmpty)
                 .opacity((selectAllCities || selectedStates.isEmpty) ? 0.4 : 1.0)
+                .onSubmit {
+                    if let first = filteredCities.first { addCityToSelection(first) }
+                }
             
             // Filtered City List
             ScrollView {
@@ -580,7 +632,7 @@ struct SearchTabView: View {
                     }
                 }
             }
-            .frame(height: 90)
+            .frame(height: 160)
             .background(Color(nsColor: .controlBackgroundColor))
             .overlay(
                 RoundedRectangle(cornerRadius: 4)
@@ -589,7 +641,10 @@ struct SearchTabView: View {
             .disabled(selectAllCities || selectedStates.isEmpty)
             .opacity((selectAllCities || selectedStates.isEmpty) ? 0.4 : 1.0)
         }
-        .frame(maxWidth: .infinity)
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.primary.opacity(0.12)))
     }
     
     // Unified "City, State" Pill Section
@@ -597,38 +652,48 @@ struct SearchTabView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("Selected locations")
-                    .font(.system(size: 8, weight: .bold, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .font(.subheadline.weight(.semibold))
                 Spacer()
+                if !selectedCityIDs.isEmpty {
+                    Button("Clear cities") {
+                        selectedCityIDs.removeAll()
+                        selectedCityRecords.removeAll()
+                    }
+                    .buttonStyle(.link)
+                    .controlSize(.small)
+                }
                 if selectAllCities {
-                    Text("All cities in selected states")
-                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                    Text("All cities selected")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("\(selectedCityIDs.count) selected")
+                        .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
                 }
             }
             
             if selectAllCities && selectedCityIDs.isEmpty {
-                Text("All cities within selected state(s) are active. Explicit city draft is empty.")
-                    .font(.system(size: 10, design: .default))
+                Text("Every city in the selected states will be searched.")
+                    .font(.callout)
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 2)
             } else if selectedCityIDs.isEmpty {
-                Text("No locations selected. Pick a state and select cities to form unified target pills (e.g., 'Abilene, TX').")
-                    .font(.system(size: 10, design: .default))
-                    .italic()
+                Text("No cities selected yet. Choose a city above or turn on All cities.")
+                    .font(.callout)
                     .foregroundStyle(.tertiary)
                     .padding(.vertical, 2)
             } else {
                 if selectAllCities {
-                    Text("Saved explicit-city draft (not active in All Cities mode):")
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    Text("Saved city selection (paused while All cities is on)")
+                        .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                 }
                 ScrollView {
                     FlowLayout(spacing: 6) {
                         ForEach(selectedCities.sorted(by: { $0.displayName < $1.displayName })) { location in
                             RemovablePill(label: location.displayName) {
-                                selectedCityIDs.remove(location.id)
+                                removeCity(location.id)
                             }
                         }
                     }
@@ -745,7 +810,7 @@ struct SearchTabView: View {
     
     private var selectedCities: [City] {
         selectedCityIDs.compactMap { id in
-            citySuggestions.first(where: { $0.id == id }) ?? City(
+            selectedCityRecords[id] ?? citySuggestions.first(where: { $0.id == id }) ?? City(
                 id: id,
                 name: id.normalizedName.capitalized,
                 stateName: allStates.first(where: { $0.id == id.stateID })?.name ?? id.stateID.rawValue
@@ -755,12 +820,34 @@ struct SearchTabView: View {
 
     private func addCityToSelection(_ city: City) {
         selectedCityIDs.insert(city.id)
+        selectedCityRecords[city.id] = city
+        citySearch = ""
+    }
+
+    private func addState(_ stateID: StateID) {
+        selectedStates.insert(stateID)
+        stateSearch = ""
+    }
+
+    private func removeCity(_ cityID: CityID) {
+        selectedCityIDs.remove(cityID)
+        selectedCityRecords.removeValue(forKey: cityID)
+    }
+
+    private func clearStates() {
+        selectedStates.removeAll()
+        selectedCityIDs.removeAll()
+        selectedCityRecords.removeAll()
+        selectAllCities = false
+        stateSearch = ""
         citySearch = ""
     }
 
     private func removeState(_ stateID: StateID) {
         selectedStates.remove(stateID)
         selectedCityIDs = selectedCityIDs.filter { $0.stateID != stateID }
+        selectedCityRecords = selectedCityRecords.filter { $0.key.stateID != stateID }
+        if selectedStates.isEmpty { selectAllCities = false }
     }
 
     @MainActor
@@ -925,6 +1012,8 @@ struct ProspectsView: View {
     @State private var selectedProspectID: ProspectID?
     @State private var pendingProspect: ProspectRecord?
     @State private var enrichmentReceipts: [ProspectID: EnrichmentReceipt] = [:]
+    @State private var sitemapAvailability: [ProspectID: SitemapAvailability] = [:]
+    @State private var isCheckingSitemaps = false
     @State private var remainingCredits: Int?
     @State private var creditMessage: String?
     @State private var hoveredProspectID: ProspectID?
@@ -964,6 +1053,12 @@ struct ProspectsView: View {
                     Task { await exportResultsToCSV() }
                 }
                 .disabled(searchResults.isEmpty || exportState.isBusy)
+
+                Button(isCheckingSitemaps ? "Checking Sitemaps…" : "Check Sitemaps", systemImage: "network") {
+                    Task { await checkSitemaps() }
+                }
+                .disabled(searchResults.isEmpty || isCheckingSitemaps)
+                .help("Checks /sitemap.xml directly with Swift HTTP. This does not use Firecrawl credits.")
 
                 Button("Test Enrichment (1 Page)", systemImage: "person.text.rectangle") {
                     pendingProspect = selectedProspect
@@ -1023,7 +1118,10 @@ struct ProspectsView: View {
         } message: { prospect in
             Text("Gemma will choose one personnel page for \(prospect.name). Only that page will be submitted to Firecrawl.")
         }
-        .task { await refreshCredits() }
+        .task {
+            await refreshCredits()
+            await checkSitemaps()
+        }
     }
 
     private var searchSummary: some View {
@@ -1168,12 +1266,38 @@ struct ProspectsView: View {
     }
 
     private func sitemapStatus(for id: ProspectID) -> String {
-        guard let availability = enrichmentReceipts[id]?.discovery.sitemapAvailability else { return "Not checked" }
+        guard let availability = enrichmentReceipts[id]?.discovery.sitemapAvailability ?? sitemapAvailability[id] else {
+            return isCheckingSitemaps ? "Checking…" : "Not checked"
+        }
         switch availability {
         case .https: return "Found (HTTPS)"
         case .httpOnly: return "Found (HTTP only)"
         case .unavailable: return "Not found"
         }
+    }
+
+    @MainActor
+    private func checkSitemaps() async {
+        guard !searchResults.isEmpty else { return }
+        sitemapAvailability = [:]
+        isCheckingSitemaps = true
+        enrichmentMessage = "FREE DISCOVERY // Checking sitemap.xml directly; no Firecrawl credits are used…"
+
+        await withTaskGroup(of: (ProspectID, SitemapAvailability).self) { group in
+            for prospect in searchResults {
+                group.addTask {
+                    let availability = await SiteLinkDiscoveryService.shared.sitemapAvailability(on: prospect.websiteURL)
+                    return (prospect.id, availability)
+                }
+            }
+            for await (id, availability) in group {
+                sitemapAvailability[id] = availability
+            }
+        }
+
+        isCheckingSitemaps = false
+        let found = sitemapAvailability.values.filter { $0 != .unavailable }.count
+        enrichmentMessage = "FREE DISCOVERY // Sitemap check complete: \(found) of \(searchResults.count) available; 0 Firecrawl credits used."
     }
 
     @MainActor
