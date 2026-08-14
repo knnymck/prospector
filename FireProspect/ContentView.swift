@@ -1098,6 +1098,12 @@ struct SearchTabView: View {
                 "All cities in \(allStates.first(where: { $0.id == stateID })?.name ?? stateID.rawValue)"
             }
             : selectedCities.sorted { $0.displayName < $1.displayName }.map(\.displayName)
+        let searchArea = SearchArea(
+            postalCodes: zipsToSearch,
+            selectedCityIDs: selectedCityIDs,
+            selectedStates: selectedStates,
+            includesEveryCityInSelectedStates: selectAllCities
+        )
         
         Task {
             defer {
@@ -1143,7 +1149,7 @@ struct SearchTabView: View {
                     do {
                         let results = try await service.searchZipCode(category: keyword, zip: zip)
                         for result in results {
-                            if SemanticProspectPolicy.accepts(result) {
+                            if SemanticProspectPolicy.accepts(result), searchArea.contains(result) {
                                 allResults[result.id] = result
                             } else {
                                 excluded += 1

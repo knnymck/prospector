@@ -69,6 +69,91 @@ enum SearchScope: Hashable, Sendable {
     case allCities(in: Set<StateID>)
 }
 
+/// The cities, states, and ZIP codes the user asked to search. MapKit results
+/// outside this area are discarded so the device location cannot leak in.
+struct SearchArea: Sendable {
+    static let maximumDistanceMeters: Double = 30_000
+
+    let postalCodes: Set<String>
+    let cities: Set<CityID>
+    let states: Set<StateID>
+    let includesEveryCityInSelectedStates: Bool
+    let zipCoordinates: [(latitude: Double, longitude: Double)]
+
+    init(
+        postalCodes: [PostalCodeRecord],
+        selectedCityIDs: Set<CityID>,
+        selectedStates: Set<StateID>,
+        includesEveryCityInSelectedStates: Bool
+    ) {
+        self.postalCodes = Set(postalCodes.map { Self.normalizedPostalCode($0.id.rawValue) }.filter { !$0.isEmpty })
+        self.cities = includesEveryCityInSelectedStates ? [] : selectedCityIDs
+        self.states = selectedStates
+        self.includesEveryCityInSelectedStates = includesEveryCityInSelectedStates
+        self.zipCoordinates = postalCodes.map { ($0.latitude, $0.longitude) }
+    }
+
+    func contains(_ candidate: ProspectCandidate) -> Bool {
+        if let postalCode = candidate.address.postalCode.flatMap({ Self.normalizedPostalCode($0) }),
+           !postalCode.isEmpty,
+           postalCodes.contains(postalCode) {
+            return true
+        }
+
+        if let cityID = cityID(from: candidate.address) {
+            if includesEveryCityInSelectedStates, states.contains(cityID.stateID) { return true }
+            if cities.contains(cityID) { return true }
+        }
+
+        if let state = stateID(from: candidate.address.state), !states.contains(state) {
+            return false
+        }
+
+        return isNearSelectedZIP(latitude: candidate.latitude, longitude: candidate.longitude)
+    }
+
+    static func normalizedPostalCode(_ value: String) -> String {
+        let digits = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if digits.count >= 5, digits.prefix(5).allSatisfy(\.isNumber) {
+            return String(digits.prefix(5))
+        }
+        return digits
+    }
+
+    private func cityID(from address: PostalAddress) -> CityID? {
+        guard let city = address.city, let state = stateID(from: address.state) else { return nil }
+        return CityID(stateID: state, normalizedName: city)
+    }
+
+    private func stateID(from value: String?) -> StateID? {
+        StateID(addressValue: value)
+    }
+
+    private func isNearSelectedZIP(latitude: Double, longitude: Double) -> Bool {
+        guard latitude != 0 || longitude != 0 else { return false }
+        let here = CLLocation(latitude: latitude, longitude: longitude)
+        return zipCoordinates.contains { coordinate in
+            let zip = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+            return here.distance(from: zip) <= Self.maximumDistanceMeters
+        }
+    }
+}
+
+extension StateID {
+    init?(addressValue: String?) {
+        guard let raw = addressValue?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return nil }
+        if raw.count == 2 {
+            self.init(rawValue: raw)
+            return
+        }
+        if let match = BundledGeographyRepository.fullStateNames.first(where: { $0.value.caseInsensitiveCompare(raw) == .orderedSame }) {
+            self.init(rawValue: match.key)
+            return
+        }
+        return nil
+    }
+}
+
 struct StateRecord: Identifiable, Hashable, Comparable, Sendable {
     let id: StateID
     let name: String

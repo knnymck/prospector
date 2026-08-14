@@ -26,11 +26,14 @@ actor MapKitSearchService {
                     
                     let region = MKCoordinateRegion(
                         center: centerPoint,
-                        latitudinalMeters: 2000,
-                        longitudinalMeters: 2000
+                        latitudinalMeters: 10_000,
+                        longitudinalMeters: 10_000
                     )
                     request.region = region
-                    
+                    if #available(macOS 15.0, *) {
+                        request.regionPriority = .required
+                    }
+
                     let search = MKLocalSearch(request: request)
                     let response = try await search.start()
                     return response.mapItems
