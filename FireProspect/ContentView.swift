@@ -1248,6 +1248,89 @@ struct NewListSheet: View {
     }
 }
 
+struct SitemapReviewSheet: View {
+    let prospect: ProspectRecord
+    let currentTeamPage: URL?
+    let onUsePage: (URL) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var snapshot: SitemapSnapshot?
+    @State private var isLoading = true
+
+    private var nodes: [SitemapHierarchyNode] {
+        SitemapHierarchyNode.tree(from: snapshot?.urls ?? [])
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Sitemap for \(prospect.name)")
+                        .font(.title2.weight(.semibold))
+                    Text("The site’s published page map. Open a page or use it if Find Page missed the right one.")
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+            }
+
+            if isLoading {
+                ProgressView("Loading sitemap…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if snapshot?.urls.isEmpty ?? true {
+                ContentUnavailableView(
+                    "No sitemap found",
+                    systemImage: "map",
+                    description: Text("This site did not publish a sitemap we could read.")
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List {
+                    OutlineGroup(nodes, children: \.children) { node in
+                        HStack(spacing: 10) {
+                            if let url = node.url {
+                                Link(node.name, destination: url)
+                                    .lineLimit(1)
+                                if urlsMatch(url, currentTeamPage) {
+                                    Text("Selected")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Button("Use page") { onUsePage(url) }
+                                    .controlSize(.small)
+                                    .disabled(urlsMatch(url, currentTeamPage))
+                            } else {
+                                Text(node.name)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .accessibilityLabel("Sitemap page \(node.path)")
+                    }
+                }
+                .listStyle(.inset)
+            }
+        }
+        .padding(24)
+        .frame(width: 640, height: 520)
+        .accessibilityIdentifier("prospects.sitemap-review")
+        .task { await loadSitemap() }
+    }
+
+    private func urlsMatch(_ lhs: URL, _ rhs: URL?) -> Bool {
+        guard let rhs else { return false }
+        return lhs.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            == rhs.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    }
+
+    @MainActor
+    private func loadSitemap() async {
+        isLoading = true
+        snapshot = await SiteLinkDiscoveryService.shared.loadSitemap(for: prospect.websiteURL)
+        isLoading = false
+    }
+}
+
 // MARK: - Prospects
 
 struct ProspectsView: View {
@@ -1275,6 +1358,7 @@ struct ProspectsView: View {
     @State private var enrichingProspectID: ProspectID?
     @State private var findingPersonnelPageID: ProspectID?
     @State private var prospectForNewList: ProspectID?
+    @State private var sitemapReviewProspect: ProspectRecord?
 
     init(searchResults: [ProspectRecord], keywords: [String] = [], locations: [String] = [], lists: Binding<[ProspectList]> = .constant([]), title: String = "Prospects", allowsCrawling: Bool = true) {
         self.searchResults = searchResults
@@ -1426,6 +1510,14 @@ struct ProspectsView: View {
                 prospectForNewList = nil
             }
         }
+        .sheet(item: $sitemapReviewProspect) { prospect in
+            SitemapReviewSheet(
+                prospect: prospect,
+                currentTeamPage: enrichmentReceipts[prospect.id]?.selectedURL
+            ) { url in
+                useSitemapPage(url, for: prospect)
+            }
+        }
     }
 
     private var searchSummary: some View {
@@ -1460,7 +1552,7 @@ struct ProspectsView: View {
 
     private var frozenProspectsTable: some View {
         GeometryReader { geometry in
-            let detailWidth = max(140, (geometry.size.width - 354) / 7)
+            let detailWidth = max(120, (geometry.size.width - 354) / CGFloat(max(tableHeaders.count, 1)))
             ScrollView(.vertical) {
                 HStack(alignment: .top, spacing: 0) {
                     VStack(spacing: 0) {
@@ -1491,7 +1583,7 @@ struct ProspectsView: View {
     }
 
     private var tableHeaders: [String] {
-        ["Address", "Phone", "Website", "Team Page", "Found Emails", "Personnel Page"] + (allowsCrawling ? ["Crawl"] : []) + ["List"]
+        ["Address", "Phone", "Website", "Team Page", "Found Emails", "Personnel Page", "Sitemap"] + (allowsCrawling ? ["Crawl"] : []) + ["List"]
     }
 
     private func rowBackground(_ id: ProspectID?) -> Color {
@@ -1543,6 +1635,14 @@ struct ProspectsView: View {
             teamPageCell(for: row, width: width)
             detailCell(foundEmails(for: row.id), width: width).textSelection(.enabled)
             personnelPageCell(for: row, width: width)
+            Button("Review") {
+                sitemapReviewProspect = searchResults.first { $0.id == row.id }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .frame(width: width, alignment: .leading)
+            .help("Open this company’s sitemap to check for a team, leadership, or people page.")
+            .accessibilityLabel("Review sitemap for \(row.prospect.name)")
             if allowsCrawling {
                 Button(enrichingProspectID == row.id ? "Crawling…" : "Crawl") {
                     if let prospect = searchResults.first(where: { $0.id == row.id }) { pendingProspect = prospect }
@@ -1577,6 +1677,19 @@ struct ProspectsView: View {
 
     private func detailCell(_ value: String, width: CGFloat) -> some View {
         Text(value).lineLimit(1).frame(width: width, alignment: .leading)
+    }
+
+    private func useSitemapPage(_ url: URL, for prospect: ProspectRecord) {
+        let existing = enrichmentReceipts[prospect.id]
+        enrichmentReceipts[prospect.id] = EnrichmentReceipt(
+            selectedURL: url,
+            discovery: existing?.discovery ?? LinkDiscovery(links: [url], sitemapAvailability: .unavailable, usedHomepage: false),
+            usedFirecrawlMap: false,
+            personnel: existing?.personnel ?? PersonnelExtraction(people: []),
+            aiEnhancement: .completed
+        )
+        checkedPersonnelPageIDs.insert(prospect.id)
+        sitemapReviewProspect = nil
     }
 
     private func add(_ prospectID: ProspectID, to listID: UUID) {

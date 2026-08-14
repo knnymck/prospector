@@ -278,6 +278,18 @@ final class FireProspectTests: XCTestCase {
         XCTAssertEqual(PersonnelPageCandidates.preferredListing(in: ranked), about)
     }
 
+    func testSitemapHierarchyNestsPeopleUnderTeam() {
+        let about = URL(string: "https://www.wgkengineers.com/about/")!
+        let team = URL(string: "https://www.wgkengineers.com/team/")!
+        let person = URL(string: "https://www.wgkengineers.com/team/bill-owen-pe/")!
+        let project = URL(string: "https://www.wgkengineers.com/project/bridge/")!
+        let tree = SitemapHierarchyNode.tree(from: [project, person, about, team])
+        XCTAssertEqual(tree.map(\.name), ["about", "project", "team"])
+        XCTAssertEqual(tree.first { $0.name == "team" }?.children?.map(\.name), ["bill-owen-pe"])
+        XCTAssertEqual(tree.first { $0.name == "project" }?.children?.map(\.name), ["bridge"])
+        XCTAssertEqual(tree.first { $0.name == "about" }?.url, about)
+    }
+
     func testLocalModelExtractsJSONFromChatOutput() {
         XCTAssertEqual(
             LocalModelService.extractJSONObject(from: "Here is the result:\n{\"ready\":true}\nDone"),
