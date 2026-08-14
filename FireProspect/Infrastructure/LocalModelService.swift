@@ -88,6 +88,7 @@ protocol LocalModelServing: Sendable {
     func expandIfAvailable(_ category: String) async -> LocalModelResult<KeywordExpansion>
     func selectPersonnelURLIfAvailable(from candidates: [URL]) async -> LocalModelResult<URL>
     func decideDeeperLookupIfAvailable(teamPage: URL, childPages: [URL], hasDomainContacts: Bool) async -> LocalModelResult<DeeperLookupDecision>
+    func extractPersonnelIfAvailable(fromPageText text: String) async -> LocalModelResult<PersonnelExtraction>
 }
 
 struct KeywordExpansionResolution: Sendable {
@@ -310,6 +311,80 @@ actor LocalModelService: LocalModelServing {
         case .value(let response):
             return .value(Self.resolveDeeperLookupDecision(from: response, candidates: bounded, fallback: bounded))
         }
+    }
+
+    func extractPersonnelIfAvailable(fromPageText text: String) async -> LocalModelResult<PersonnelExtraction> {
+        let chunks = Self.pageTextChunks(text)
+        guard !chunks.isEmpty else { return .unavailable(.loadFailed("The team page text was empty.")) }
+        let capability = capability()
+        guard case .available = capability else { return .unavailable(capability) }
+
+        var people: [PersonnelExtraction.Person] = []
+        for chunk in chunks {
+            let prompt = """
+            Extract every person from this page text. First and last names are usually in the same paragraph as an email or phone number. Pair those names with nearby titles, emails, and phones. Do not invent values.
+            Return JSON only:
+            {"people":[{"name":"First Last","title":"Job title","email":"name@company.com","phone":"555-0100"}]}
+            PAGE:
+            \(chunk)
+            """
+            switch await generateJSONIfAvailable(prompt: prompt, maximumTokens: 900) {
+            case .unavailable(let reason):
+                if people.isEmpty { return .unavailable(reason) }
+            case .value(let response):
+                if let extraction = Self.decodePersonnelExtraction(response) {
+                    people.append(contentsOf: extraction.people)
+                }
+            }
+        }
+        let merged = TeamPagePersonnelParser.merging(people)
+        return merged.isEmpty
+            ? .unavailable(.loadFailed("On-device AI did not return usable people from the page text."))
+            : .value(PersonnelExtraction(people: merged))
+    }
+
+    /// Visible page text with tags removed. The full page is kept; callers walk it in chunks.
+    nonisolated static func visiblePageText(_ text: String) -> String {
+        var cleaned = text
+        if text.contains("<"), text.contains(">") {
+            cleaned = cleaned.replacingOccurrences(of: #"(?is)<script\b[^>]*>.*?</script>"#, with: " ", options: .regularExpression)
+            cleaned = cleaned.replacingOccurrences(of: #"(?is)<style\b[^>]*>.*?</style>"#, with: " ", options: .regularExpression)
+            cleaned = cleaned.replacingOccurrences(of: #"<[^>]+>"#, with: " ", options: .regularExpression)
+        }
+        return cleaned.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Walks the whole page in overlapping windows so names anywhere on the page can be found.
+    nonisolated static func pageTextChunks(_ text: String, chunkCharacters: Int = 5_000, overlap: Int = 400) -> [String] {
+        let page = visiblePageText(text)
+        guard !page.isEmpty else { return [] }
+        if page.count <= chunkCharacters { return [page] }
+        var chunks: [String] = []
+        var start = page.startIndex
+        while start < page.endIndex {
+            let end = page.index(start, offsetBy: chunkCharacters, limitedBy: page.endIndex) ?? page.endIndex
+            chunks.append(String(page[start..<end]))
+            if end == page.endIndex { break }
+            start = page.index(end, offsetBy: -overlap, limitedBy: start) ?? end
+        }
+        return chunks
+    }
+
+    nonisolated static func decodePersonnelExtraction(_ json: String) -> PersonnelExtraction? {
+        guard let data = extractJSONObject(from: json).data(using: .utf8),
+              let decoded = try? JSONDecoder().decode(PersonnelExtraction.self, from: data) else { return nil }
+        let people = decoded.people.compactMap { person -> PersonnelExtraction.Person? in
+            let name = person.name?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let title = person.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let email = person.email?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let phone = person.phone?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let cleanName = name.flatMap { $0.isEmpty ? nil : $0 }
+            let cleanEmail = email.flatMap { $0.contains("@") ? $0 : nil }
+            guard cleanName != nil || cleanEmail != nil else { return nil }
+            return PersonnelExtraction.Person(name: cleanName, title: title.flatMap { $0.isEmpty ? nil : $0 }, email: cleanEmail, phone: phone.flatMap { $0.isEmpty ? nil : $0 })
+        }
+        return people.isEmpty ? nil : PersonnelExtraction(people: people)
     }
 
     nonisolated static func resolveDeeperLookupDecision(from response: String, candidates: [URL], fallback: [URL]) -> DeeperLookupDecision {

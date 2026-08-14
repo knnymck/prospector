@@ -477,12 +477,13 @@ actor SiteEnrichmentService {
         guard let selected else { return receipt }
 
         let personnel = await collectPersonnel(from: selected, website: website, apiKey: apiKey)
+        let usedReasoning = personnel.people.contains { $0.name != nil && $0.email != nil }
         return EnrichmentReceipt(
             selectedURL: selected,
             discovery: receipt.discovery,
             usedFirecrawlMap: false,
             personnel: personnel,
-            aiEnhancement: receipt.selectedURL == nil ? receipt.aiEnhancement : .completed
+            aiEnhancement: usedReasoning || receipt.selectedURL != nil ? .completed : receipt.aiEnhancement
         )
     }
 
@@ -514,7 +515,14 @@ actor SiteEnrichmentService {
             }
         }
 
-        if SiteEmailPolicy.hasCompanyContacts(merged, siteHost: siteHost) || !merged.isEmpty {
+        if !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if let reasoned = await peopleFromTeamPageText(teamPage, apiKey: apiKey) {
+                collected.append(contentsOf: reasoned)
+                merged = TeamPagePersonnelParser.merging(collected)
+            }
+        }
+
+        if !merged.isEmpty {
             return PersonnelExtraction(people: merged)
         }
         guard !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -522,6 +530,14 @@ actor SiteEnrichmentService {
         }
         return (try? await FirecrawlService.shared.extractPersonnel(fromSinglePage: teamPage, apiKey: apiKey))
             ?? PersonnelExtraction(people: [])
+    }
+
+    private func peopleFromTeamPageText(_ teamPage: URL, apiKey: String) async -> [PersonnelExtraction.Person]? {
+        guard let markdown = try? await FirecrawlService.shared.scrapeMarkdown(url: teamPage, apiKey: apiKey) else { return nil }
+        switch await model.extractPersonnelIfAvailable(fromPageText: markdown) {
+        case .value(let extraction): return extraction.people
+        case .unavailable: return nil
+        }
     }
 
     private func deeperLookupDecision(teamPage: URL, children: [URL], hasDomainContacts: Bool) async -> DeeperLookupDecision {

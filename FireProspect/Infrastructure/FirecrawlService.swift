@@ -93,6 +93,32 @@ actor FirecrawlService {
         return value.intValue
     }
 
+    /// Returns the visible page as markdown so the on-device model can reason over names next to emails.
+    func scrapeMarkdown(url: URL, apiKey: String) async throws -> String {
+        struct Payload: Encodable {
+            let url: String
+            let formats: [String]
+            let onlyMainContent: Bool
+        }
+        struct Response: Decodable {
+            let success: Bool?
+            let data: Page?
+            let markdown: String?
+            struct Page: Decodable { let markdown: String?; let content: String? }
+        }
+        let data = try await post(
+            path: "scrape",
+            body: Payload(url: url.absoluteString, formats: ["markdown"], onlyMainContent: true),
+            apiKey: apiKey
+        )
+        let decoded = try JSONDecoder().decode(Response.self, from: data)
+        let markdown = decoded.data?.markdown ?? decoded.data?.content ?? decoded.markdown
+        guard let markdown, !markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw FirecrawlError.requestFailed("The page text was empty.")
+        }
+        return markdown
+    }
+
     func mapDomain(url: URL, apiKey: String) async throws -> [URL] {
         struct Payload: Encodable { let url: String; let limit: Int }
         struct Response: Decodable { let success: Bool?; let links: [String]? }
