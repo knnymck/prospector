@@ -290,6 +290,152 @@ final class FireProspectTests: XCTestCase {
         XCTAssertFalse(links.contains(URL(string: "https://other.example/people")!))
     }
 
+    func testTeamPageParserFindsProfileLinksAndDecodesObfuscatedMailto() {
+        let teamHTML = """
+        <html><body>
+          <a href="https://g4gr.com/our-team/ronald-enamorado/"><img alt="Ronald"></a>
+          <a href="https://g4gr.com/our-team/">Our Team</a>
+          <a href="https://g4gr.com/our-team/page/2">Page 2</a>
+          <a href="https://g4gr.com/wp-json/oembed/1.0/embed?url=https://g4gr.com/our-team/">embed</a>
+          <a href="https://other.example/our-team/someone/">external</a>
+        </body></html>
+        """
+        let teamPage = URL(string: "https://g4gr.com/our-team/")!
+        let profiles = TeamPagePersonnelParser.profileURLs(in: teamHTML, teamPage: teamPage)
+        XCTAssertEqual(profiles, [URL(string: "https://g4gr.com/our-team/ronald-enamorado/")!])
+
+        let profileHTML = """
+        <html><head><meta property="og:title" content="Ronald Enamorado - G4GR"></head>
+        <body>
+          <h1>Ronald Enamorado</h1>
+          <h3>Senior Service Technician</h3>
+          <a href="mailto:&#114;on&#097;&#108;&#100;&#046;&#101;na&#109;&#111;r&#097;&#100;o&#064;&#103;&#052;&#103;r.&#099;om">Email</a>
+          <a href="tel:832-888-0702">Call</a>
+          <footer>
+            <a href="tel:817-691-5328">Office</a>
+            <a href="tel:817-691-5328">Office</a>
+          </footer>
+        </body></html>
+        """
+        let people = TeamPagePersonnelParser.people(
+            in: profileHTML,
+            pageURL: URL(string: "https://g4gr.com/our-team/ronald-enamorado/")!
+        )
+        XCTAssertEqual(people.count, 1)
+        XCTAssertEqual(people.first?.name, "Ronald Enamorado")
+        XCTAssertEqual(people.first?.title, "Senior Service Technician")
+        XCTAssertEqual(people.first?.email, "ronald.enamorado@g4gr.com")
+        XCTAssertEqual(people.first?.phone, "832-888-0702")
+    }
+
+    func testTeamPageParserReadsPeopleListedOnTheSamePage() {
+        let html = """
+        <html><body>
+          <h2>Jane Doe</h2>
+          <p>Office Manager</p>
+          <a href="mailto:jane@example.com">jane@example.com</a>
+          <a href="tel:555-0100">555-0100</a>
+        </body></html>
+        """
+        let people = TeamPagePersonnelParser.people(in: html, pageURL: URL(string: "https://example.com/team")!)
+        XCTAssertEqual(people.first?.email, "jane@example.com")
+        XCTAssertEqual(people.first?.name, "Jane Doe")
+        XCTAssertEqual(people.first?.phone, "555-0100")
+    }
+
+    func testSiteEmailPolicyKeepsPersonalCompanyAddresses() {
+        XCTAssertTrue(SiteEmailPolicy.isPersonalCompanyEmail("ronald.enamorado@g4gr.com", siteHost: "www.g4gr.com"))
+        XCTAssertFalse(SiteEmailPolicy.isPersonalCompanyEmail("info@g4gr.com", siteHost: "g4gr.com"))
+        XCTAssertFalse(SiteEmailPolicy.isPersonalCompanyEmail("sales@g4gr.com", siteHost: "g4gr.com"))
+        XCTAssertFalse(SiteEmailPolicy.isPersonalCompanyEmail("jane@gmail.com", siteHost: "g4gr.com"))
+        XCTAssertTrue(SiteEmailPolicy.hasCompanyContacts([
+            PersonnelExtraction.Person(email: "ronald.enamorado@g4gr.com")
+        ], siteHost: "g4gr.com"))
+        XCTAssertFalse(SiteEmailPolicy.hasCompanyContacts([
+            PersonnelExtraction.Person(email: "info@g4gr.com")
+        ], siteHost: "g4gr.com"))
+    }
+
+    func testHeaderFooterKeepsPersonalCompanyEmailsAndDropsGenericInboxes() {
+        let html = """
+        <html><body>
+          <header><a href="mailto:pat.lee@g4gr.com">Pat</a></header>
+          <footer>
+            <a href="mailto:info@g4gr.com">Info</a>
+            <a href="mailto:sales@g4gr.com">Sales</a>
+            Reach us at alex.kim@g4gr.com
+          </footer>
+          <main><a href="mailto:someone@elsewhere.com">Ignore</a></main>
+        </body></html>
+        """
+        let people = TeamPagePersonnelParser.headerFooterPeople(in: html, siteHost: "g4gr.com")
+        let emails = Set(people.compactMap(\.email))
+        XCTAssertEqual(emails, ["pat.lee@g4gr.com", "alex.kim@g4gr.com"])
+    }
+
+    func testSitemapChildrenAreTheLayerBelowTheTeamPage() {
+        let team = URL(string: "https://g4gr.com/our-team/")!
+        let children = TeamPagePersonnelParser.childPages(in: [
+            team,
+            URL(string: "https://g4gr.com/our-team/ronald-enamorado/")!,
+            URL(string: "https://g4gr.com/our-story/")!,
+            URL(string: "https://g4gr.com/our-team/jeff-ryall/")!
+        ], under: team)
+        XCTAssertEqual(children.map(\.path), ["/our-team/ronald-enamorado/", "/our-team/jeff-ryall/"])
+    }
+
+    func testDeeperLookupDecisionReadsExploreIndexesAndCanSkip() {
+        let children = [
+            URL(string: "https://g4gr.com/our-team/ronald-enamorado/")!,
+            URL(string: "https://g4gr.com/our-team/jeff-ryall/")!
+        ]
+        let explore = LocalModelService.resolveDeeperLookupDecision(
+            from: "{\"explore\":true,\"indexes\":[2]}",
+            candidates: children,
+            fallback: children
+        )
+        XCTAssertTrue(explore.shouldExplore)
+        XCTAssertEqual(explore.selectedURLs, [children[1]])
+
+        let skip = LocalModelService.resolveDeeperLookupDecision(
+            from: "{\"explore\":false}",
+            candidates: children,
+            fallback: children
+        )
+        XCTAssertFalse(skip.shouldExplore)
+        XCTAssertTrue(skip.selectedURLs.isEmpty)
+
+        XCTAssertFalse(DeeperLookupDecision.heuristic(children: children, hasDomainContacts: true).shouldExplore)
+        XCTAssertTrue(DeeperLookupDecision.heuristic(children: children, hasDomainContacts: false).shouldExplore)
+        XCTAssertFalse(DeeperLookupDecision.heuristic(children: [], hasDomainContacts: false).shouldExplore)
+    }
+
+    func testSitemapSnapshotRoundTripsByHost() throws {
+        let suite = "SitemapSnapshotTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let website = URL(string: "https://g4gr.com/")!
+        let snapshot = SitemapSnapshot(
+            availability: .https,
+            urls: [URL(string: "https://g4gr.com/our-team/")!, URL(string: "https://g4gr.com/our-team/ronald-enamorado/")!],
+            fetchedAt: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+        SitemapAvailabilityCache.storeSnapshot(snapshot, for: website, defaults: defaults)
+        let loaded = SitemapAvailabilityCache.snapshot(for: website, defaults: defaults)
+        XCTAssertEqual(loaded?.availability, .https)
+        XCTAssertEqual(loaded?.urls, snapshot.urls)
+    }
+
+    func testTeamPageParserMergesDuplicatePeopleByEmail() {
+        let merged = TeamPagePersonnelParser.merging([
+            PersonnelExtraction.Person(name: "Jane Doe", title: nil, email: "jane@example.com", phone: nil),
+            PersonnelExtraction.Person(name: "Jane Doe", title: "Manager", email: "jane@example.com", phone: "555-0100")
+        ])
+        XCTAssertEqual(merged.count, 1)
+        XCTAssertEqual(merged.first?.title, "Manager")
+        XCTAssertEqual(merged.first?.phone, "555-0100")
+    }
+
     func testSafeFilenameRemovesPathCharacters() {
         XCTAssertEqual(
             CSVExporter.safeFilename(stem: "../../Civil / Engineering"),
@@ -363,9 +509,14 @@ private actor ModelStub: LocalModelServing {
         selectionCallCount += 1
         return .unavailable(reportedCapability)
     }
+    func decideDeeperLookupIfAvailable(teamPage: URL, childPages: [URL], hasDomainContacts: Bool) -> LocalModelResult<DeeperLookupDecision> {
+        .unavailable(reportedCapability)
+    }
 }
 
 private struct DiscoveryStub: SiteLinkDiscovering {
     let result: LinkDiscovery
+    var sitemap: SitemapSnapshot = .empty
     func discover(on website: URL) async throws -> LinkDiscovery { result }
+    func loadSitemap(for website: URL) async -> SitemapSnapshot { sitemap }
 }

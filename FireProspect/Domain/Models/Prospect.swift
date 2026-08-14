@@ -256,9 +256,17 @@ struct PersonnelExtraction: Codable, Hashable, Sendable {
     let people: [Person]
 
     struct Person: Codable, Identifiable, Hashable, Sendable {
-        var id: String { [name, title, email].compactMap { $0 }.joined(separator: "|") }
+        var id: String { [name, title, email, phone].compactMap { $0 }.joined(separator: "|") }
         let name: String?
         let title: String?
         let email: String?
+        let phone: String?
+
+        init(name: String? = nil, title: String? = nil, email: String? = nil, phone: String? = nil) {
+            self.name = name
+            self.title = title
+            self.email = email
+            self.phone = phone
+        }
     }
 }

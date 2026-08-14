@@ -66,10 +66,28 @@ enum LocalModelResult<Value: Sendable>: Sendable {
     case unavailable(LocalModelCapability)
 }
 
+struct DeeperLookupDecision: Equatable, Sendable {
+    let shouldExplore: Bool
+    let selectedURLs: [URL]
+
+    static func skip(becauseHasContacts: Bool = false) -> DeeperLookupDecision {
+        DeeperLookupDecision(shouldExplore: false, selectedURLs: [])
+    }
+
+    static func heuristic(children: [URL], hasDomainContacts: Bool) -> DeeperLookupDecision {
+        if hasDomainContacts || children.isEmpty { return .skip() }
+        return DeeperLookupDecision(
+            shouldExplore: true,
+            selectedURLs: Array(children.prefix(TeamPagePersonnelParser.maximumProfileCount))
+        )
+    }
+}
+
 protocol LocalModelServing: Sendable {
     func capability() async -> LocalModelCapability
     func expandIfAvailable(_ category: String) async -> LocalModelResult<KeywordExpansion>
     func selectPersonnelURLIfAvailable(from candidates: [URL]) async -> LocalModelResult<URL>
+    func decideDeeperLookupIfAvailable(teamPage: URL, childPages: [URL], hasDomainContacts: Bool) async -> LocalModelResult<DeeperLookupDecision>
 }
 
 struct KeywordExpansionResolution: Sendable {
@@ -272,6 +290,57 @@ actor LocalModelService: LocalModelServing {
             }
             return .value(selected)
         }
+    }
+
+    func decideDeeperLookupIfAvailable(teamPage: URL, childPages: [URL], hasDomainContacts: Bool) async -> LocalModelResult<DeeperLookupDecision> {
+        if hasDomainContacts { return .value(.skip(becauseHasContacts: true)) }
+        if childPages.isEmpty { return .value(.skip()) }
+        let bounded = Array(childPages.prefix(30))
+        let list = bounded.enumerated().map { "\($0.offset + 1). \($0.element.absoluteString)" }.joined(separator: "\n")
+        let prompt = """
+        Team page: \(teamPage.absoluteString)
+        No personal @company emails were found on that page.
+        These sitemap pages sit under the team page:
+        \(list)
+        Decide if any look like individual people or profile pages worth opening.
+        Return JSON only: {"explore":true,"indexes":[1,2]} or {"explore":false}
+        """
+        switch await generateJSONIfAvailable(prompt: prompt) {
+        case .unavailable(let reason): return .unavailable(reason)
+        case .value(let response):
+            return .value(Self.resolveDeeperLookupDecision(from: response, candidates: bounded, fallback: bounded))
+        }
+    }
+
+    nonisolated static func resolveDeeperLookupDecision(from response: String, candidates: [URL], fallback: [URL]) -> DeeperLookupDecision {
+        let json = extractJSONObject(from: response)
+        guard let data = json.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return DeeperLookupDecision.heuristic(children: fallback, hasDomainContacts: false)
+        }
+        let explore = boolValue(object["explore"] ?? object["should_explore"])
+        guard explore else { return .skip() }
+        let indexes = intArray(object["indexes"] ?? object["best_indexes"])
+        let selected = indexes.compactMap { index -> URL? in
+            candidates.indices.contains(index - 1) ? candidates[index - 1] : nil
+        }
+        let urls = selected.isEmpty ? Array(fallback.prefix(TeamPagePersonnelParser.maximumProfileCount)) : selected
+        return DeeperLookupDecision(shouldExplore: true, selectedURLs: urls)
+    }
+
+    nonisolated private static func boolValue(_ raw: Any?) -> Bool {
+        if let value = raw as? Bool { return value }
+        if let value = raw as? NSNumber { return value.boolValue }
+        if let value = raw as? String { return ["true", "yes", "1"].contains(value.lowercased()) }
+        return false
+    }
+
+    nonisolated private static func intArray(_ raw: Any?) -> [Int] {
+        if let values = raw as? [Int] { return values }
+        if let values = raw as? [NSNumber] { return values.map(\.intValue) }
+        if let value = raw as? Int { return [value] }
+        if let values = raw as? [String] { return values.compactMap(Int.init) }
+        return []
     }
 
     /// Gemma variants may return either the requested one-based index or the older URL schema.
