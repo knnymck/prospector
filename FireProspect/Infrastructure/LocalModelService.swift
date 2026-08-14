@@ -51,12 +51,14 @@ enum LocalModelAvailability: Equatable, Sendable {
 
 enum LocalModelError: LocalizedError {
     case runtimeUnavailable
+    case runtimeSetupTimedOut
     case modelInstallationFailed
     case invalidExpansion
 
     var errorDescription: String? {
         switch self {
         case .runtimeUnavailable: "Ollama is not running. Install and open Ollama to enable Gemma 4 2B."
+        case .runtimeSetupTimedOut: "Ollama did not become ready in time. Open Ollama, then choose Install Gemma 4 2B again."
         case .modelInstallationFailed: "Gemma 4 2B could not be installed by the local runtime."
         case .invalidExpansion: "The local model returned an invalid keyword expansion."
         }
@@ -114,6 +116,19 @@ actor LocalModelService {
             throw LocalModelError.modelInstallationFailed
         }
         await progress?(1)
+    }
+
+    /// Waits for a newly installed or launched Ollama runtime before continuing setup.
+    func waitForRuntime(timeout: Duration = .seconds(600)) async throws {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+
+        while clock.now < deadline {
+            if await availability() != .runtimeUnavailable { return }
+            try Task.checkCancellation()
+            try await clock.sleep(for: .seconds(2))
+        }
+        throw LocalModelError.runtimeSetupTimedOut
     }
 
     func expand(_ category: String) async throws -> KeywordExpansion {
