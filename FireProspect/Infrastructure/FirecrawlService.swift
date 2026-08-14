@@ -113,14 +113,14 @@ actor FirecrawlService {
         let string = Schema.Property(type: "string", items: nil)
         let person = Schema.Property(type: "object", items: nil)
         let schema = Schema(properties: [
-            "people": .init(type: "array", items: .init(type: person.type, properties: ["name": string, "title": string, "email": string]))
+            "people": .init(type: "array", items: .init(type: person.type, properties: ["name": string, "title": string, "email": string, "phone": string]))
         ])
         struct Payload: Encodable { let urls: [String]; let prompt: String; let schema: Schema }
         struct Start: Decodable { let success: Bool?; let id: String?; let data: JSONValue? }
 
         let payload = Payload(
             urls: [url.absoluteString],
-            prompt: "Extract only personnel explicitly present on this page. Return names, job titles, and email addresses; do not infer missing values.",
+            prompt: "Extract people listed on this page, including names, job titles, email addresses, and phone numbers from visible text, mailto links, and tel links. Do not invent missing values.",
             schema: schema
         )
         let data = try await post(path: "extract", body: payload, apiKey: apiKey)

@@ -23,6 +23,8 @@
 		A20000020000000000000001 /* CSVExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000120000000000000001 /* CSVExporter.swift */; };
 		A20000030000000000000001 /* MapKitProspectAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000130000000000000001 /* MapKitProspectAdapter.swift */; };
 		A30000020000000000000001 /* SiteEnrichmentService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000120000000000000001 /* SiteEnrichmentService.swift */; };
+		A30000030000000000000001 /* TeamPagePersonnelParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000130000000000000001 /* TeamPagePersonnelParser.swift */; };
+		A30000040000000000000001 /* SiteEmailPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000140000000000000001 /* SiteEmailPolicy.swift */; };
 		A30000010000000000000001 /* LocalModelService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000110000000000000001 /* LocalModelService.swift */; };
 		A40000010000000000000001 /* LocalModelSetupWizard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000110000000000000001 /* LocalModelSetupWizard.swift */; };
 		A40000020000000000000001 /* MLXLLM in Frameworks */ = {isa = PBXBuildFile; productRef = A40000310000000000000001 /* MLXLLM */; };
@@ -70,6 +72,8 @@
 		A20000120000000000000001 /* CSVExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CSVExporter.swift; sourceTree = "<group>"; };
 		A20000130000000000000001 /* MapKitProspectAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapKitProspectAdapter.swift; sourceTree = "<group>"; };
 		A30000120000000000000001 /* SiteEnrichmentService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiteEnrichmentService.swift; sourceTree = "<group>"; };
+		A30000130000000000000001 /* TeamPagePersonnelParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeamPagePersonnelParser.swift; sourceTree = "<group>"; };
+		A30000140000000000000001 /* SiteEmailPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiteEmailPolicy.swift; sourceTree = "<group>"; };
 		A30000110000000000000001 /* LocalModelService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalModelService.swift; sourceTree = "<group>"; };
 		A40000110000000000000001 /* LocalModelSetupWizard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalModelSetupWizard.swift; sourceTree = "<group>"; };
 		A10000130000000000000001 /* GeographyDataMetadata.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = GeographyDataMetadata.json; sourceTree = "<group>"; };
@@ -147,6 +151,8 @@
 				A20000220000000000000001 /* MapKit */,
 				A30000110000000000000001 /* LocalModelService.swift */,
 				A30000120000000000000001 /* SiteEnrichmentService.swift */,
+				A30000130000000000000001 /* TeamPagePersonnelParser.swift */,
+				A30000140000000000000001 /* SiteEmailPolicy.swift */,
 				96C75DD7302CF371009FADE1 /* FirecrawlService.swift */,
 				96C75DD8302CF371009FADE1 /* KeychainHelper.swift */,
 			);
@@ -367,6 +373,8 @@
 				A30000010000000000000001 /* LocalModelService.swift in Sources */,
 				A40000010000000000000001 /* LocalModelSetupWizard.swift in Sources */,
 				A30000020000000000000001 /* SiteEnrichmentService.swift in Sources */,
+				A30000030000000000000001 /* TeamPagePersonnelParser.swift in Sources */,
+				A30000040000000000000001 /* SiteEmailPolicy.swift in Sources */,
 				96C75DA3302A2648009FADE1 /* FireProspectApp.swift in Sources */,
 				A10000010000000000000001 /* Geography.swift in Sources */,
 				A10000020000000000000001 /* BundledGeographyRepository.swift in Sources */,

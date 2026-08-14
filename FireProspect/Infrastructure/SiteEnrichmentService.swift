@@ -7,9 +7,19 @@ enum SitemapAvailability: String, Sendable, Equatable, Codable {
 }
 
 /// Persists free sitemap checks so revisiting a saved search does not repeat every request.
+struct SitemapSnapshot: Equatable, Sendable {
+    var availability: SitemapAvailability
+    var urls: [URL]
+    var fetchedAt: Date
+
+    static let empty = SitemapSnapshot(availability: .unavailable, urls: [], fetchedAt: .distantPast)
+}
+
 struct SitemapAvailabilityCache {
+    static let maximumStoredURLCount = 400
     private static let defaultsKey = "sitemapAvailabilityByHost.v1"
     private static let linksKey = "sitemapCandidateLinksByHost.v1"
+    private static let snapshotKey = "sitemapSnapshotByHost.v1"
 
     static func cached(for website: URL, defaults: UserDefaults = .standard) -> SitemapAvailability? {
         guard let host = website.host?.lowercased(),
@@ -36,6 +46,33 @@ struct SitemapAvailabilityCache {
         values[host] = Array(links.prefix(SiteLinkDiscoveryService.maximumCandidateCount)).map(\.absoluteString)
         defaults.set(values, forKey: linksKey)
     }
+
+    static func snapshot(for website: URL, defaults: UserDefaults = .standard) -> SitemapSnapshot? {
+        guard let host = website.host?.lowercased(),
+              let payload = defaults.dictionary(forKey: snapshotKey)?[host] as? [String: Any],
+              let availabilityRaw = payload["availability"] as? String,
+              let availability = SitemapAvailability(rawValue: availabilityRaw),
+              let strings = payload["urls"] as? [String] else { return nil }
+        let fetchedAt = (payload["fetchedAt"] as? NSNumber).map { Date(timeIntervalSince1970: $0.doubleValue) } ?? .distantPast
+        return SitemapSnapshot(
+            availability: availability,
+            urls: strings.compactMap(URL.init(string:)),
+            fetchedAt: fetchedAt
+        )
+    }
+
+    static func storeSnapshot(_ snapshot: SitemapSnapshot, for website: URL, defaults: UserDefaults = .standard) {
+        guard let host = website.host?.lowercased() else { return }
+        var values = defaults.dictionary(forKey: snapshotKey) as? [String: [String: Any]] ?? [:]
+        values[host] = [
+            "availability": snapshot.availability.rawValue,
+            "urls": Array(snapshot.urls.prefix(maximumStoredURLCount).map(\.absoluteString)),
+            "fetchedAt": snapshot.fetchedAt.timeIntervalSince1970
+        ]
+        defaults.set(values, forKey: snapshotKey)
+        store(snapshot.availability, for: website, defaults: defaults)
+        storeLinks(snapshot.urls, for: website, defaults: defaults)
+    }
 }
 
 struct LinkDiscovery: Sendable {
@@ -57,7 +94,10 @@ enum SiteEnrichmentError: LocalizedError {
 }
 
 /// Free first pass: inspects the server-rendered homepage navigation without using Firecrawl.
-protocol SiteLinkDiscovering: Sendable { func discover(on website: URL) async throws -> LinkDiscovery }
+protocol SiteLinkDiscovering: Sendable {
+    func discover(on website: URL) async throws -> LinkDiscovery
+    func loadSitemap(for website: URL) async -> SitemapSnapshot
+}
 
 actor SiteLinkDiscoveryService: SiteLinkDiscovering {
     static let shared = SiteLinkDiscoveryService()
@@ -79,21 +119,66 @@ actor SiteLinkDiscoveryService: SiteLinkDiscovering {
 
     /// Checks the conventional sitemap endpoint using URLSession only. This path never calls Firecrawl.
     func sitemapAvailability(on website: URL) async -> SitemapAvailability {
-        guard let host = website.host, isPublicHost(host) else { return .unavailable }
-        let result = await fetchSitemap(host: host)
-        SitemapAvailabilityCache.store(result.availability, for: website)
-        let links = sameSiteLinks(in: result.data, baseURL: website)
-        SitemapAvailabilityCache.storeLinks(links, for: website)
-        return result.availability
+        await loadSitemap(for: website).availability
     }
 
-    private func fetchSitemap(host: String) async -> (availability: SitemapAvailability, data: Data?) {
-        async let httpsResult = fetch(URL(string: "https://\(host)/sitemap.xml")!)
-        async let httpResult = fetch(URL(string: "http://\(host)/sitemap.xml")!)
-        let (httpsData, httpData) = await (httpsResult, httpResult)
-        if let httpsData, Self.isSitemapDocument(httpsData) { return (.https, httpsData) }
-        if let httpData, Self.isSitemapDocument(httpData) { return (.httpOnly, httpData) }
-        return (.unavailable, nil)
+    func loadSitemap(for website: URL) async -> SitemapSnapshot {
+        if let cached = SitemapAvailabilityCache.snapshot(for: website) {
+            return cached
+        }
+        guard let host = website.host, isPublicHost(host) else { return .empty }
+        let snapshot = await fetchSitemapSnapshot(host: host, website: website)
+        SitemapAvailabilityCache.storeSnapshot(snapshot, for: website)
+        return snapshot
+    }
+
+    private func fetchSitemapSnapshot(host: String, website: URL) async -> SitemapSnapshot {
+        let roots = [
+            (URL(string: "https://\(host)/sitemap.xml")!, SitemapAvailability.https),
+            (URL(string: "https://\(host)/sitemap_index.xml")!, SitemapAvailability.https),
+            (URL(string: "http://\(host)/sitemap.xml")!, SitemapAvailability.httpOnly),
+            (URL(string: "http://\(host)/sitemap_index.xml")!, SitemapAvailability.httpOnly)
+        ]
+        for (url, availability) in roots {
+            guard let data = await fetch(url), Self.isSitemapDocument(data) else { continue }
+            let urls = await expandSitemap(data, website: website)
+            if !urls.isEmpty || availability != .unavailable {
+                return SitemapSnapshot(availability: availability, urls: urls, fetchedAt: Date())
+            }
+        }
+        return SitemapSnapshot(availability: .unavailable, urls: [], fetchedAt: Date())
+    }
+
+    private func expandSitemap(_ data: Data, website: URL) async -> [URL] {
+        let text = String(data: data, encoding: .utf8) ?? ""
+        let locs = Self.locURLs(in: text, baseURL: website)
+        if text.lowercased().contains("<sitemapindex") {
+            let childMaps = prioritizedChildSitemaps(locs)
+            var collected: [URL] = []
+            var seen = Set<String>()
+            for child in childMaps.prefix(12) {
+                guard let childData = await fetch(child), Self.isSitemapDocument(childData) else { continue }
+                for url in Self.sameSiteLinks(in: childData, baseURL: website) where seen.insert(url.absoluteString).inserted {
+                    collected.append(url)
+                    if collected.count >= SitemapAvailabilityCache.maximumStoredURLCount { return collected }
+                }
+            }
+            return collected
+        }
+        return Array(Self.sameSiteLinks(in: data, baseURL: website).prefix(SitemapAvailabilityCache.maximumStoredURLCount))
+    }
+
+    private func prioritizedChildSitemaps(_ locs: [URL]) -> [URL] {
+        let preferred = ["page-sitemap", "post-sitemap", "pages", "posts"]
+        return locs.sorted { lhs, rhs in
+            let left = preferred.firstIndex(where: lhs.absoluteString.lowercased().contains) ?? preferred.count
+            let right = preferred.firstIndex(where: rhs.absoluteString.lowercased().contains) ?? preferred.count
+            return left == right ? lhs.absoluteString < rhs.absoluteString : left < right
+        }
+    }
+
+    nonisolated static func locURLs(in text: String, baseURL: URL) -> [URL] {
+        sameSiteLinks(in: Data(text.utf8), baseURL: baseURL)
     }
 
     static func isSitemapDocument(_ data: Data) -> Bool {
@@ -167,7 +252,7 @@ actor SiteLinkDiscoveryService: SiteLinkDiscovering {
         } catch { return nil }
     }
 
-    private func sameSiteLinks(in data: Data?, baseURL: URL) -> [URL] {
+    nonisolated static func sameSiteLinks(in data: Data?, baseURL: URL) -> [URL] {
         guard let data, let text = String(data: data, encoding: .utf8), let baseHost = baseURL.host?.lowercased() else { return [] }
         let pattern = #"(?i)(?:href\s*=\s*[\"']([^\"'#]+)|<loc>\s*([^<]+)\s*</loc>)"#
         guard let expression = try? NSRegularExpression(pattern: pattern) else { return [] }
@@ -217,7 +302,9 @@ actor SiteEnrichmentService {
     }
 
     func findPersonnelPage(website: URL) async throws -> EnrichmentReceipt {
+        async let sitemapLoad: SitemapSnapshot = discoveryService.loadSitemap(for: website)
         let discovery = try await discoveryService.discover(on: website)
+        _ = await sitemapLoad
         let capability = await model.capability()
         guard case .available = capability else {
             // Homepage navigation discovery above is useful independently. Do not select a
@@ -241,10 +328,103 @@ actor SiteEnrichmentService {
         return EnrichmentReceipt(selectedURL: selected, discovery: discovery, usedFirecrawlMap: false, personnel: PersonnelExtraction(people: []), aiEnhancement: .completed)
     }
 
-    func enrichOnePage(website: URL, apiKey: String) async throws -> EnrichmentReceipt {
-        let receipt = try await findPersonnelPage(website: website)
-        guard let selected = receipt.selectedURL else { return receipt }
-        let personnel = try await FirecrawlService.shared.extractPersonnel(fromSinglePage: selected, apiKey: apiKey)
-        return EnrichmentReceipt(selectedURL: selected, discovery: receipt.discovery, usedFirecrawlMap: false, personnel: personnel, aiEnhancement: .completed)
+    func enrichOnePage(website: URL, apiKey: String, knownTeamPage: URL? = nil) async throws -> EnrichmentReceipt {
+        let receipt: EnrichmentReceipt
+        if let knownTeamPage {
+            let discovery = (try? await discoveryService.discover(on: website))
+                ?? LinkDiscovery(links: [knownTeamPage], sitemapAvailability: .unavailable, usedHomepage: false)
+            receipt = EnrichmentReceipt(
+                selectedURL: knownTeamPage,
+                discovery: discovery,
+                usedFirecrawlMap: false,
+                personnel: PersonnelExtraction(people: []),
+                aiEnhancement: .completed
+            )
+        } else {
+            receipt = try await findPersonnelPage(website: website)
+        }
+        let selected = receipt.selectedURL ?? knownTeamPage
+        guard let selected else { return receipt }
+
+        let personnel = await collectPersonnel(from: selected, website: website, apiKey: apiKey)
+        return EnrichmentReceipt(
+            selectedURL: selected,
+            discovery: receipt.discovery,
+            usedFirecrawlMap: false,
+            personnel: personnel,
+            aiEnhancement: receipt.selectedURL == nil ? receipt.aiEnhancement : .completed
+        )
+    }
+
+    /// Reads the team page, header/footer company emails, then the stored sitemap layer below if needed.
+    private func collectPersonnel(from teamPage: URL, website: URL, apiKey: String) async -> PersonnelExtraction {
+        let sitemap = await discoveryService.loadSitemap(for: website)
+        let siteHost = website.host ?? teamPage.host ?? ""
+        let teamHTML = await fetchHTML(teamPage)
+        var collected: [PersonnelExtraction.Person] = []
+        var openedPages = Set<String>()
+        if let teamHTML {
+            collected.append(contentsOf: TeamPagePersonnelParser.people(in: teamHTML, pageURL: teamPage))
+            collected.append(contentsOf: TeamPagePersonnelParser.headerFooterPeople(in: teamHTML, siteHost: siteHost))
+            let profiles = TeamPagePersonnelParser.profileURLs(in: teamHTML, teamPage: teamPage)
+            if !profiles.isEmpty {
+                collected.append(contentsOf: await peopleFromProfilePages(profiles))
+                openedPages.formUnion(profiles.map(\.absoluteString))
+            }
+        }
+
+        var merged = TeamPagePersonnelParser.merging(collected)
+        if !SiteEmailPolicy.hasCompanyContacts(merged, siteHost: siteHost) {
+            let children = TeamPagePersonnelParser.childPages(in: sitemap.urls, under: teamPage)
+            let decision = await deeperLookupDecision(teamPage: teamPage, children: children, hasDomainContacts: false)
+            if decision.shouldExplore {
+                let remaining = decision.selectedURLs.filter { openedPages.insert($0.absoluteString).inserted }
+                collected.append(contentsOf: await peopleFromProfilePages(remaining))
+                merged = TeamPagePersonnelParser.merging(collected)
+            }
+        }
+
+        if SiteEmailPolicy.hasCompanyContacts(merged, siteHost: siteHost) || !merged.isEmpty {
+            return PersonnelExtraction(people: merged)
+        }
+        guard !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return PersonnelExtraction(people: [])
+        }
+        return (try? await FirecrawlService.shared.extractPersonnel(fromSinglePage: teamPage, apiKey: apiKey))
+            ?? PersonnelExtraction(people: [])
+    }
+
+    private func deeperLookupDecision(teamPage: URL, children: [URL], hasDomainContacts: Bool) async -> DeeperLookupDecision {
+        switch await model.decideDeeperLookupIfAvailable(teamPage: teamPage, childPages: children, hasDomainContacts: hasDomainContacts) {
+        case .value(let decision): return decision
+        case .unavailable:
+            return DeeperLookupDecision.heuristic(children: children, hasDomainContacts: hasDomainContacts)
+        }
+    }
+
+    private func peopleFromProfilePages(_ urls: [URL]) async -> [PersonnelExtraction.Person] {
+        await withTaskGroup(of: [PersonnelExtraction.Person].self) { group in
+            for url in urls.prefix(TeamPagePersonnelParser.maximumProfileCount) {
+                group.addTask {
+                    guard let html = await self.fetchHTML(url) else { return [] }
+                    return TeamPagePersonnelParser.people(in: html, pageURL: url)
+                }
+            }
+            var people: [PersonnelExtraction.Person] = []
+            for await batch in group { people.append(contentsOf: batch) }
+            return people
+        }
+    }
+
+    private func fetchHTML(_ url: URL) async -> String? {
+        var request = URLRequest(url: url, timeoutInterval: 10)
+        request.setValue("FireProspect/2.4 Team Page Lookup", forHTTPHeaderField: "User-Agent")
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode), data.count <= 5_000_000 else { return nil }
+            return String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1)
+        } catch {
+            return nil
+        }
     }
 }

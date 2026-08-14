@@ -1381,6 +1381,7 @@ struct ProspectsView: View {
                         TableColumn("Name") { Text($0.name ?? "—") }
                         TableColumn("Title") { Text($0.title ?? "—") }
                         TableColumn("Email") { Text($0.email ?? "—").textSelection(.enabled) }
+                        TableColumn("Phone") { Text($0.phone ?? "—").textSelection(.enabled) }
                     }
                     .frame(minHeight: 120)
                 }
@@ -1755,15 +1756,19 @@ struct ProspectsView: View {
                 enrichmentProgress = min(enrichmentProgress + 0.015, 0.95)
             }
         }
-        enrichmentMessage = "Looking at the website for a team or staff page…"
+        let knownTeamPage = enrichmentReceipts[prospect.id]?.selectedURL
+        enrichmentMessage = knownTeamPage == nil
+            ? "Looking at the website for a team or staff page…"
+            : "Looking up people on the saved team page…"
         do {
             let receipt = try await SiteEnrichmentService.shared.enrichOnePage(
                 website: prospect.websiteURL,
-                apiKey: KeychainHelper.getKey()
+                apiKey: KeychainHelper.getKey(),
+                knownTeamPage: knownTeamPage
             )
             let enhancementStatus: String
             switch receipt.aiEnhancement {
-            case .completed: enhancementStatus = "Looked up people from one page. Credits depend on the lookup."
+            case .completed: enhancementStatus = "Looked up people from the team page and any individual profile pages."
             case .skipped(let reason): enhancementStatus = "Couldn’t use on-device AI for this lookup. \(reason.unavailableDescription)"
             }
             let peopleCount = receipt.personnel.people.count
