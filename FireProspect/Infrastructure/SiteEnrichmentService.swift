@@ -398,8 +398,10 @@ enum PersonnelPageCandidates {
         var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         components?.fragment = nil
         components?.query = nil
-        components?.scheme = components?.scheme?.lowercased()
-        components?.host = components?.host?.lowercased()
+        let scheme = components?.scheme?.lowercased()
+        let host = components?.host?.lowercased()
+        components?.scheme = scheme
+        components?.host = host
         if let path = components?.path, path.count > 1, path.hasSuffix("/") {
             components?.path.removeLast()
         }
