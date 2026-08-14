@@ -320,6 +320,41 @@ enum AIEnhancementOutcome: Sendable, Equatable {
     case skipped(LocalModelCapability)
 }
 
+struct SitemapHierarchyNode: Identifiable, Hashable, Sendable {
+    var id: String { path }
+    let name: String
+    let path: String
+    let url: URL?
+    let children: [SitemapHierarchyNode]?
+
+    static func tree(from urls: [URL]) -> [SitemapHierarchyNode] {
+        let entries = urls.map { url -> [String] in
+            let path = url.path
+            let trimmed = path.count > 1 && path.hasSuffix("/") ? String(path.dropLast()) : path
+            return trimmed.split(separator: "/").map(String.init)
+        }
+        return build(urls: urls, segments: entries, prefix: [])
+    }
+
+    private static func build(urls: [URL], segments: [[String]], prefix: [String]) -> [SitemapHierarchyNode] {
+        var groups: [String: [(url: URL, rest: [String])]] = [:]
+        var order: [String] = []
+        for (url, parts) in zip(urls, segments) {
+            guard let head = parts.first else { continue }
+            if groups[head] == nil { order.append(head) }
+            groups[head, default: []].append((url, Array(parts.dropFirst())))
+        }
+        return order.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedSame ? $0 < $1 : $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }.map { name in
+            let items = groups[name] ?? []
+            let exact = items.first(where: { $0.rest.isEmpty })?.url
+            let nested = items.filter { !$0.rest.isEmpty }
+            let childNodes = nested.isEmpty ? nil : build(urls: nested.map(\.url), segments: nested.map(\.rest), prefix: prefix + [name])
+            let path = "/" + (prefix + [name]).joined(separator: "/")
+            return SitemapHierarchyNode(name: name, path: path, url: exact, children: childNodes)
+        }
+    }
+}
+
 enum PersonnelPageCandidates {
     static let maximumCount = 30
 
