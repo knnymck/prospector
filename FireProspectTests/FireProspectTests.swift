@@ -232,6 +232,32 @@ final class FireProspectTests: XCTestCase {
         XCTAssertFalse(SiteLinkDiscoveryService.isSitemapDocument(Data("<html><h1>Not found</h1></html>".utf8)))
     }
 
+    func testNavigationDiscoveryUsesHeaderNavAndFooterAndRanksPersonnelLinks() {
+        let html = """
+        <html><body>
+          <header><a href="/about">About</a></header>
+          <main><a href="/hidden-team">Team link outside navigation</a></main>
+          <nav>
+            <a href="/services">Services</a>
+            <a href="/company">Our Leadership Team</a>
+            <a href="https://other.example/people">External People</a>
+          </nav>
+          <footer><a href="/professionals#top">Our Professionals</a></footer>
+        </body></html>
+        """
+
+        let links = SiteLinkDiscoveryService.navigationLinks(
+            in: Data(html.utf8),
+            baseURL: URL(string: "https://example.com")!
+        )
+
+        XCTAssertEqual(links.first?.absoluteString, "https://example.com/company")
+        XCTAssertTrue(links.contains(URL(string: "https://example.com/professionals")!))
+        XCTAssertTrue(links.contains(URL(string: "https://example.com/about")!))
+        XCTAssertFalse(links.contains(URL(string: "https://example.com/hidden-team")!))
+        XCTAssertFalse(links.contains(URL(string: "https://other.example/people")!))
+    }
+
     func testSafeFilenameRemovesPathCharacters() {
         XCTAssertEqual(
             CSVExporter.safeFilename(stem: "../../Civil / Engineering"),

@@ -56,7 +56,7 @@ enum SiteEnrichmentError: LocalizedError {
     }
 }
 
-/// Free first pass: checks both sitemap transports and then server-rendered homepage HTML.
+/// Free first pass: inspects the server-rendered homepage navigation without using Firecrawl.
 protocol SiteLinkDiscovering: Sendable { func discover(on website: URL) async throws -> LinkDiscovery }
 
 actor SiteLinkDiscoveryService: SiteLinkDiscovering {
@@ -68,24 +68,13 @@ actor SiteLinkDiscoveryService: SiteLinkDiscovering {
 
     func discover(on website: URL) async throws -> LinkDiscovery {
         guard let host = website.host, isPublicHost(host) else { throw SiteEnrichmentError.invalidWebsite }
-        let cachedLinks = SitemapAvailabilityCache.links(for: website)
-        if !cachedLinks.isEmpty, let availability = SitemapAvailabilityCache.cached(for: website) {
-            return LinkDiscovery(links: cachedLinks, sitemapAvailability: availability, usedHomepage: false)
-        }
-        let (availability, sitemapData) = await fetchSitemap(host: host)
-        SitemapAvailabilityCache.store(availability, for: website)
-
-        let sitemapLinks = sameSiteLinks(in: sitemapData, baseURL: website)
-        if !sitemapLinks.isEmpty {
-            let links = Array(sitemapLinks.prefix(Self.maximumCandidateCount))
-            SitemapAvailabilityCache.storeLinks(links, for: website)
-            return LinkDiscovery(links: links, sitemapAvailability: availability, usedHomepage: false)
-        }
-
         let homepageData = await fetch(website)
-        let homepageLinks = sameSiteLinks(in: homepageData, baseURL: website)
-        let links = Array(homepageLinks.prefix(Self.maximumCandidateCount))
-        return LinkDiscovery(links: links, sitemapAvailability: availability, usedHomepage: true)
+        let links = Array(Self.navigationLinks(in: homepageData, baseURL: website).prefix(Self.maximumCandidateCount))
+        return LinkDiscovery(
+            links: links,
+            sitemapAvailability: SitemapAvailabilityCache.cached(for: website) ?? .unavailable,
+            usedHomepage: true
+        )
     }
 
     /// Checks the conventional sitemap endpoint using URLSession only. This path never calls Firecrawl.
@@ -110,6 +99,50 @@ actor SiteLinkDiscoveryService: SiteLinkDiscovering {
     static func isSitemapDocument(_ data: Data) -> Bool {
         guard let text = String(data: data.prefix(4_096), encoding: .utf8)?.lowercased() else { return false }
         return text.contains("<urlset") || text.contains("<sitemapindex")
+    }
+
+    /// Returns same-site links found specifically inside header, nav, and footer elements.
+    /// Candidates with personnel-related anchor text or paths sort first for local-model reasoning.
+    nonisolated static func navigationLinks(in data: Data?, baseURL: URL) -> [URL] {
+        guard let data, let html = String(data: data, encoding: .utf8), let baseHost = baseURL.host?.lowercased() else { return [] }
+        let sectionPattern = #"(?is)<(nav|header|footer)\b[^>]*>(.*?)</\1\s*>"#
+        let anchorPattern = #"(?is)<a\b[^>]*href\s*=\s*[\"']([^\"'#]+)[\"'][^>]*>(.*?)</a\s*>"#
+        guard let sections = try? NSRegularExpression(pattern: sectionPattern),
+              let anchors = try? NSRegularExpression(pattern: anchorPattern) else { return [] }
+        let htmlRange = NSRange(html.startIndex..., in: html)
+        var candidates: [(url: URL, score: Int, order: Int)] = []
+        var seen = Set<String>()
+        var order = 0
+
+        for section in sections.matches(in: html, range: htmlRange) {
+            guard let bodyRange = Range(section.range(at: 2), in: html) else { continue }
+            let body = String(html[bodyRange])
+            let bodyNSRange = NSRange(body.startIndex..., in: body)
+            for anchor in anchors.matches(in: body, range: bodyNSRange) {
+                guard let hrefRange = Range(anchor.range(at: 1), in: body),
+                      let labelRange = Range(anchor.range(at: 2), in: body) else { continue }
+                let href = String(body[hrefRange]).replacingOccurrences(of: "&amp;", with: "&")
+                guard let url = URL(string: href, relativeTo: baseURL)?.absoluteURL,
+                      url.host?.lowercased() == baseHost,
+                      ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { continue }
+                var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+                components?.fragment = nil
+                guard let normalizedURL = components?.url,
+                      seen.insert(normalizedURL.absoluteString).inserted else { continue }
+                let label = String(body[labelRange])
+                    .replacingOccurrences(of: #"<[^>]+>"#, with: " ", options: .regularExpression)
+                let evidence = "\(label) \(normalizedURL.path)".lowercased()
+                let hints = ["our team", "our people", "leadership", "executive", "management", "professionals", "staff", "people", "team"]
+                let score = hints.enumerated().reduce(0) { result, hint in
+                    evidence.contains(hint.element) ? max(result, hints.count - hint.offset) : result
+                }
+                candidates.append((normalizedURL, score, order))
+                order += 1
+            }
+        }
+        return candidates.sorted { lhs, rhs in
+            lhs.score == rhs.score ? lhs.order < rhs.order : lhs.score > rhs.score
+        }.map(\.url)
     }
 
     private func isPublicHost(_ host: String) -> Bool {
@@ -172,7 +205,7 @@ enum AIEnhancementOutcome: Sendable, Equatable {
     case skipped(LocalModelCapability)
 }
 
-/// Orchestrates free discovery, local selection, map fallback, and exactly one extract URL.
+/// Orchestrates free homepage-navigation discovery, local selection, and exactly one extract URL.
 actor SiteEnrichmentService {
     static let shared = SiteEnrichmentService()
 
@@ -187,8 +220,8 @@ actor SiteEnrichmentService {
         let discovery = try await discoveryService.discover(on: website)
         let capability = await model.capability()
         guard case .available = capability else {
-            // Direct HTTP sitemap/homepage discovery above is useful independently. Do not map,
-            // select a personnel page, or extract names/titles when local reasoning is unavailable.
+            // Homepage navigation discovery above is useful independently. Do not select a
+            // personnel page or extract names/titles when local reasoning is unavailable.
             return EnrichmentReceipt(
                 selectedURL: nil,
                 discovery: discovery,
@@ -197,20 +230,15 @@ actor SiteEnrichmentService {
                 aiEnhancement: .skipped(capability)
             )
         }
-        var candidates = discovery.links
-        var usedMap = false
-        if candidates.isEmpty {
-            candidates = try await FirecrawlService.shared.mapDomain(url: website, apiKey: apiKey)
-            usedMap = true
-        }
+        let candidates = discovery.links
         guard !candidates.isEmpty else { throw SiteEnrichmentError.noCandidateLinks }
         let selection = await model.selectPersonnelURLIfAvailable(from: candidates)
         guard case .value(let selected) = selection else {
             let reason: LocalModelCapability
             if case .unavailable(let unavailable) = selection { reason = unavailable } else { reason = .loadFailed("Personnel selection failed.") }
-            return EnrichmentReceipt(selectedURL: nil, discovery: discovery, usedFirecrawlMap: usedMap, personnel: PersonnelExtraction(people: []), aiEnhancement: .skipped(reason))
+            return EnrichmentReceipt(selectedURL: nil, discovery: discovery, usedFirecrawlMap: false, personnel: PersonnelExtraction(people: []), aiEnhancement: .skipped(reason))
         }
         let personnel = try await FirecrawlService.shared.extractPersonnel(fromSinglePage: selected, apiKey: apiKey)
-        return EnrichmentReceipt(selectedURL: selected, discovery: discovery, usedFirecrawlMap: usedMap, personnel: personnel, aiEnhancement: .completed)
+        return EnrichmentReceipt(selectedURL: selected, discovery: discovery, usedFirecrawlMap: false, personnel: personnel, aiEnhancement: .completed)
     }
 }
