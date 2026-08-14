@@ -67,7 +67,6 @@ struct ContentView: View {
         case search
         case searches
         case prospectList(UUID)
-        case logs
         case settings
         case history(UUID)
 
@@ -79,7 +78,6 @@ struct ContentView: View {
             case .search: "search"
             case .searches: "searches"
             case .prospectList(let id): "list.\(id.uuidString)"
-            case .logs: "logs"
             case .settings: "settings"
             case .history(let id): "history.\(id.uuidString)"
             }
@@ -95,8 +93,6 @@ struct ContentView: View {
                 "Searches"
             case .prospectList(let id):
                 id.uuidString
-            case .logs:
-                "Logs"
             case .settings:
                 "Settings"
             case .history(let id):
@@ -114,8 +110,6 @@ struct ContentView: View {
                 "clock.arrow.circlepath"
             case .prospectList:
                 "list.bullet.rectangle"
-            case .logs:
-                "doc.text.magnifyingglass"
             case .settings:
                 "gearshape"
             case .history:
@@ -182,34 +176,6 @@ struct ContentView: View {
                     Section {
                         destinationRow(.home)
                         destinationRow(.search)
-                        DisclosureGroup(isExpanded: $isListsExpanded) {
-                            if prospectLists.isEmpty {
-                                Text("No lists")
-                                    .foregroundStyle(.secondary)
-                                    .accessibilityIdentifier("sidebar.lists.empty")
-                            } else {
-                                ForEach(prospectLists) { list in
-                                    Label(list.name, systemImage: "building.2")
-                                        .tag(SidebarDestination.prospectList(list.id))
-                                        .accessibilityIdentifier("sidebar.list.\(list.id.uuidString)")
-                                        .contextMenu {
-                                            Button("Delete List", role: .destructive) { deleteList(list.id) }
-                                        }
-                                }
-                            }
-                        } label: {
-                            HStack {
-                                Label("Lists", systemImage: "list.bullet.rectangle")
-                                Spacer()
-                                Button { showingNewList = true } label: {
-                                    Image(systemName: "plus")
-                                }
-                                .buttonStyle(.borderless)
-                                .help("Create a new list")
-                                .accessibilityLabel("Create a new list")
-                                .accessibilityIdentifier("sidebar.lists.create")
-                            }
-                        }
                         DisclosureGroup(isExpanded: $isSearchesExpanded) {
                             if searchHistory.isEmpty {
                                 Text("No search history")
@@ -243,7 +209,34 @@ struct ContentView: View {
                         } label: {
                             destinationRow(.searches)
                         }
-                        destinationRow(.logs)
+                        DisclosureGroup(isExpanded: $isListsExpanded) {
+                            if prospectLists.isEmpty {
+                                Text("No lists")
+                                    .foregroundStyle(.secondary)
+                                    .accessibilityIdentifier("sidebar.lists.empty")
+                            } else {
+                                ForEach(prospectLists) { list in
+                                    Label(list.name, systemImage: "building.2")
+                                        .tag(SidebarDestination.prospectList(list.id))
+                                        .accessibilityIdentifier("sidebar.list.\(list.id.uuidString)")
+                                        .contextMenu {
+                                            Button("Delete List", role: .destructive) { deleteList(list.id) }
+                                        }
+                                }
+                            }
+                        } label: {
+                            HStack {
+                                Label("Lists", systemImage: "list.bullet.rectangle")
+                                Spacer()
+                                Button { showingNewList = true } label: {
+                                    Image(systemName: "plus")
+                                }
+                                .buttonStyle(.borderless)
+                                .help("Create a new list")
+                                .accessibilityLabel("Create a new list")
+                                .accessibilityIdentifier("sidebar.lists.create")
+                            }
+                        }
                     }
                 }
                 .listStyle(.sidebar)
@@ -295,8 +288,6 @@ struct ContentView: View {
                         title: selectedList?.name ?? "List",
                         allowsCrawling: false
                     )
-                case .logs:
-                    FirecrawlLogsView()
                 case .settings:
                     SettingsTabView()
                 case .history:
