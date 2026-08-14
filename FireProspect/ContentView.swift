@@ -912,18 +912,20 @@ struct SearchTabView: View {
             : selectedCities.sorted { $0.displayName < $1.displayName }.map(\.displayName)
         
         Task {
+            defer {
+                Task { @MainActor in
+                    self.progressText = ""
+                    self.isSearching = false
+                }
+            }
             let service = MapKitSearchService()
             var allResults: [ProspectID: ProspectCandidate] = [:]
             var processed = 0
             var excluded = 0
             var nonfatalWarnings: [String] = []
-            let expansion: KeywordExpansion
-            do {
-                expansion = try await LocalModelService.shared.expand(cat)
-            } catch {
-                expansion = .fallback(for: cat)
-                nonfatalWarnings.append("Keyword expansion unavailable; using the original category. \(error.localizedDescription)")
-            }
+            let expansionResult = await KeywordExpansionResolver(model: LocalModelService.shared).resolve(cat)
+            let expansion = expansionResult.expansion
+            if let status = expansionResult.status { nonfatalWarnings.append(status) }
 
             await MainActor.run {
                 self.expansionStatus = expansion.keywords.count == 1 && expansion.keywords[0] == cat
@@ -987,7 +989,6 @@ struct SearchTabView: View {
                 self.acceptedCount = items.count
                 self.excludedCount = finalExcluded
                 self.warnings = displayedWarnings
-                self.isSearching = false
                 self.onSearchCompleted(items, expansion.keywords, searchedLocations)
             }
         }
@@ -1088,8 +1089,8 @@ struct ProspectsView: View {
                 frozenProspectsTable
             }
 
-            if let receipt = selectedProspectID.flatMap({ enrichmentReceipts[$0] }), !receipt.personnel.people.isEmpty {
-                GroupBox("Personnel from \(receipt.selectedURL.host() ?? receipt.selectedURL.absoluteString)") {
+            if let receipt = selectedProspectID.flatMap({ enrichmentReceipts[$0] }), let selectedURL = receipt.selectedURL, !receipt.personnel.people.isEmpty {
+                GroupBox("Personnel from \(selectedURL.host() ?? selectedURL.absoluteString)") {
                     Table(receipt.personnel.people) {
                         TableColumn("Name") { Text($0.name ?? "—") }
                         TableColumn("Title") { Text($0.title ?? "—") }
@@ -1322,11 +1323,16 @@ struct ProspectsView: View {
                 website: prospect.websiteURL,
                 apiKey: KeychainHelper.getKey()
             )
+            let enhancementStatus: String
+            switch receipt.aiEnhancement {
+            case .completed: enhancementStatus = "COMPLETE // Exactly 1 page submitted to Firecrawl extract"
+            case .skipped(let reason): enhancementStatus = "NONFATAL // AI personnel enhancements skipped: \(reason.unavailableDescription)"
+            }
             enrichmentMessage = """
-            COMPLETE // Exactly 1 page submitted to Firecrawl extract
+            \(enhancementStatus)
             SITEMAP // \(receipt.discovery.sitemapAvailability.rawValue)
             DISCOVERY // \(receipt.usedFirecrawlMap ? "Firecrawl map fallback" : "Native Swift")
-            SELECTED // \(receipt.selectedURL.absoluteString)
+            SELECTED // \(receipt.selectedURL?.absoluteString ?? "Skipped")
             PEOPLE // \(receipt.personnel.people.count)
             """
             enrichmentReceipts[prospect.id] = receipt

@@ -25,7 +25,9 @@ enum SiteEnrichmentError: LocalizedError {
 }
 
 /// Free first pass: checks both sitemap transports and then server-rendered homepage HTML.
-actor SiteLinkDiscoveryService {
+protocol SiteLinkDiscovering: Sendable { func discover(on website: URL) async throws -> LinkDiscovery }
+
+actor SiteLinkDiscoveryService: SiteLinkDiscovering {
     static let shared = SiteLinkDiscoveryService()
     static let maximumCandidateCount = 30
 
@@ -114,18 +116,43 @@ actor SiteLinkDiscoveryService {
 }
 
 struct EnrichmentReceipt: Sendable {
-    let selectedURL: URL
+    let selectedURL: URL?
     let discovery: LinkDiscovery
     let usedFirecrawlMap: Bool
     let personnel: PersonnelExtraction
+    let aiEnhancement: AIEnhancementOutcome
+}
+
+enum AIEnhancementOutcome: Sendable, Equatable {
+    case completed
+    case skipped(LocalModelCapability)
 }
 
 /// Orchestrates free discovery, local selection, map fallback, and exactly one extract URL.
 actor SiteEnrichmentService {
     static let shared = SiteEnrichmentService()
 
+    private let model: any LocalModelServing
+    private let discoveryService: any SiteLinkDiscovering
+    init(model: any LocalModelServing = LocalModelService.shared, discoveryService: any SiteLinkDiscovering = SiteLinkDiscoveryService.shared) {
+        self.model = model
+        self.discoveryService = discoveryService
+    }
+
     func enrichOnePage(website: URL, apiKey: String) async throws -> EnrichmentReceipt {
-        let discovery = try await SiteLinkDiscoveryService.shared.discover(on: website)
+        let discovery = try await discoveryService.discover(on: website)
+        let capability = await model.capability()
+        guard case .available = capability else {
+            // Direct HTTP sitemap/homepage discovery above is useful independently. Do not map,
+            // select a personnel page, or extract names/titles when local reasoning is unavailable.
+            return EnrichmentReceipt(
+                selectedURL: nil,
+                discovery: discovery,
+                usedFirecrawlMap: false,
+                personnel: PersonnelExtraction(people: []),
+                aiEnhancement: .skipped(capability)
+            )
+        }
         var candidates = discovery.links
         var usedMap = false
         if candidates.isEmpty {
@@ -133,8 +160,13 @@ actor SiteEnrichmentService {
             usedMap = true
         }
         guard !candidates.isEmpty else { throw SiteEnrichmentError.noCandidateLinks }
-        let selected = try await LocalModelService.shared.selectPersonnelURL(from: candidates)
+        let selection = await model.selectPersonnelURLIfAvailable(from: candidates)
+        guard case .value(let selected) = selection else {
+            let reason: LocalModelCapability
+            if case .unavailable(let unavailable) = selection { reason = unavailable } else { reason = .loadFailed("Personnel selection failed.") }
+            return EnrichmentReceipt(selectedURL: nil, discovery: discovery, usedFirecrawlMap: usedMap, personnel: PersonnelExtraction(people: []), aiEnhancement: .skipped(reason))
+        }
         let personnel = try await FirecrawlService.shared.extractPersonnel(fromSinglePage: selected, apiKey: apiKey)
-        return EnrichmentReceipt(selectedURL: selected, discovery: discovery, usedFirecrawlMap: usedMap, personnel: personnel)
+        return EnrichmentReceipt(selectedURL: selected, discovery: discovery, usedFirecrawlMap: usedMap, personnel: personnel, aiEnhancement: .completed)
     }
 }

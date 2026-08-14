@@ -63,6 +63,58 @@ final class FireProspectTests: XCTestCase {
         XCTAssertEqual(KeywordExpansion.fallback(for: "Civil Engineering").keywords, ["Civil Engineering"])
     }
 
+    func testNoModelImmediatelyUsesOriginalKeyword() async {
+        let model = ModelStub(capability: .notInstalled)
+        let result = await KeywordExpansionResolver(model: model, timeout: .seconds(1)).resolve("Civil Engineering")
+        XCTAssertEqual(result.expansion.keywords, ["Civil Engineering"])
+        let expansionCalls = await model.expansionCallCount
+        XCTAssertEqual(expansionCalls, 1)
+    }
+
+    func testReadyModelUsesGeneratedKeywords() async throws {
+        let generated = try KeywordExpansion(source: "Civil Engineering", keywords: ["Structural Engineers", "Civil Consultants"])
+        let model = ModelStub(capability: .available, expansion: .value(generated))
+        let result = await KeywordExpansionResolver(model: model, timeout: .seconds(1)).resolve("Civil Engineering")
+        XCTAssertEqual(result.expansion, generated)
+    }
+
+    func testMissingCheckpointIsInvalidAndDoesNotInvokeInstaller() async throws {
+        let missing = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        XCTAssertFalse(LocalModelService.isValidCheckpoint(missing))
+        let model = ModelStub(capability: .cacheInvalid)
+        let result = await KeywordExpansionResolver(model: model, timeout: .seconds(1)).resolve("Surveyors")
+        XCTAssertEqual(result.expansion.keywords, ["Surveyors"])
+        let installCalls = await model.installCallCount
+        XCTAssertEqual(installCalls, 0)
+    }
+
+    func testInferenceFailureAndTimeoutFallBackWithoutFreezing() async {
+        let failed = ModelStub(capability: .available, expansion: .unavailable(.loadFailed("bad weights")))
+        let failedResult = await KeywordExpansionResolver(model: failed).resolve("Architects")
+        XCTAssertEqual(failedResult.expansion.keywords, ["Architects"])
+
+        let slow = ModelStub(capability: .available, delay: .seconds(2))
+        let clock = ContinuousClock()
+        let start = clock.now
+        let result = await KeywordExpansionResolver(model: slow, timeout: .milliseconds(20)).resolve("Architects")
+        XCTAssertEqual(result.expansion.keywords, ["Architects"])
+        XCTAssertLessThan(start.duration(to: clock.now), .seconds(1))
+    }
+
+    func testEnrichmentWithoutModelRetainsDiscoveryAndSkipsAI() async throws {
+        let link = URL(string: "https://example.com/team")!
+        let discovery = DiscoveryStub(result: LinkDiscovery(links: [link], sitemapAvailability: .https, usedHomepage: false))
+        let model = ModelStub(capability: .notInstalled)
+        let receipt = try await SiteEnrichmentService(model: model, discoveryService: discovery)
+            .enrichOnePage(website: URL(string: "https://example.com")!, apiKey: "unused")
+        XCTAssertEqual(receipt.discovery.links, [link])
+        XCTAssertNil(receipt.selectedURL)
+        XCTAssertEqual(receipt.aiEnhancement, .skipped(.notInstalled))
+        XCTAssertEqual(receipt.personnel.people, [])
+        let selectionCalls = await model.selectionCallCount
+        XCTAssertEqual(selectionCalls, 0)
+    }
+
     func testLocalModelExtractsJSONFromChatOutput() {
         XCTAssertEqual(
             LocalModelService.extractJSONObject(from: "Here is the result:\n{\"ready\":true}\nDone"),
@@ -130,4 +182,34 @@ final class FireProspectTests: XCTestCase {
         XCTAssertEqual(loaded.first?.keywords, new.keywords)
         XCTAssertEqual(loaded.first?.locations, new.locations)
     }
+}
+
+private actor ModelStub: LocalModelServing {
+    let reportedCapability: LocalModelCapability
+    let expansion: LocalModelResult<KeywordExpansion>
+    let delay: Duration?
+    private(set) var expansionCallCount = 0
+    private(set) var selectionCallCount = 0
+    private(set) var installCallCount = 0
+
+    init(capability: LocalModelCapability, expansion: LocalModelResult<KeywordExpansion>? = nil, delay: Duration? = nil) {
+        self.reportedCapability = capability
+        self.expansion = expansion ?? .unavailable(capability)
+        self.delay = delay
+    }
+    func capability() -> LocalModelCapability { reportedCapability }
+    func expandIfAvailable(_ category: String) async -> LocalModelResult<KeywordExpansion> {
+        expansionCallCount += 1
+        if let delay { try? await Task.sleep(for: delay) }
+        return expansion
+    }
+    func selectPersonnelURLIfAvailable(from candidates: [URL]) -> LocalModelResult<URL> {
+        selectionCallCount += 1
+        return .unavailable(reportedCapability)
+    }
+}
+
+private struct DiscoveryStub: SiteLinkDiscovering {
+    let result: LinkDiscovery
+    func discover(on website: URL) async throws -> LinkDiscovery { result }
 }
