@@ -68,6 +68,42 @@ final class FireProspectTests: XCTestCase {
         XCTAssertEqual(LocalModelService.manifest.repositoryID, "mlx-community/gemma-3-1b-it-4bit")
     }
 
+    func testModelKeywordValidationPreservesPizzaAndRejectsImplementationWords() {
+        let keywords = LocalModelService.validatedModelKeywords(
+            source: " pizza ",
+            keywords: ["MapKit", "search", "pizza", "Pizzeria", "pizza restaurant", "query"]
+        )
+
+        XCTAssertEqual(keywords, ["pizza", "Pizzeria", "pizza restaurant"])
+    }
+
+    func testModelKeywordValidationAlwaysIncludesExactSourceAndEnforcesLimit() {
+        let keywords = LocalModelService.validatedModelKeywords(
+            source: "Civil Engineering",
+            keywords: ["Structural Engineers", "Civil Consultants", "Engineering Firm", "Surveyors", "Construction"]
+        )
+
+        XCTAssertEqual(keywords.first, "Civil Engineering")
+        XCTAssertEqual(keywords.count, KeywordExpansion.maximumKeywordCount)
+    }
+
+    func testKeywordPromptsAreGenericAndUseTheRuntimeCategory() {
+        let prompts = LocalModelService.keywordExpansionPrompts(for: "Landscape Architecture")
+
+        XCTAssertEqual(prompts.count, 2)
+        XCTAssertTrue(prompts.allSatisfy { $0.contains("Input: Landscape Architecture") })
+        XCTAssertFalse(prompts.joined().localizedCaseInsensitiveContains("pizza"))
+        XCTAssertFalse(prompts.joined().localizedCaseInsensitiveContains("civil engineering"))
+    }
+
+    func testKeywordJSONContractDecodesAndSanitizesCivilEngineeringResponse() {
+        let json = #"{"source":"civil engineering","keywords":["civil engineering","structural engineering firm","MapKit","civil engineering consultant"]}"#
+        let expansion = LocalModelService.decodeKeywordExpansion(json, expectedSource: "civil engineering")
+
+        XCTAssertEqual(expansion?.keywords, ["civil engineering", "structural engineering firm", "civil engineering consultant"])
+        XCTAssertNil(LocalModelService.decodeKeywordExpansion(#"{"source":"wrong","keywords":["firm"]}"#, expectedSource: "civil engineering"))
+    }
+
     func testNoModelImmediatelyUsesOriginalKeyword() async {
         let model = ModelStub(capability: .notInstalled)
         let result = await KeywordExpansionResolver(model: model, timeout: .seconds(1)).resolve("Civil Engineering")

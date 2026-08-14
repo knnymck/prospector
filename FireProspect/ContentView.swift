@@ -1665,7 +1665,7 @@ struct SettingsTabView: View {
                 HStack(spacing: 16) {
                     Button(action: {
                         KeychainHelper.saveKey(firecrawlKey)
-                        firecrawlMessage = "Configured — credential stored in Keychain."
+                        firecrawlMessage = "Configured — credential stored securely without password prompts."
                     }) {
                         Text("Save API Key")
                     }
@@ -1728,7 +1728,7 @@ struct SettingsTabView: View {
         .accessibilityIdentifier("detail.settings")
         .onAppear {
             firecrawlKey = KeychainHelper.getKey()
-            firecrawlMessage = firecrawlKey.isEmpty ? "Not configured." : "Configured in Keychain."
+            firecrawlMessage = firecrawlKey.isEmpty ? "Not configured. Enter the API key once for this updated build." : "Configured securely in Keychain."
             Task { await refreshLocalModel() }
         }
         .sheet(isPresented: $showingModelSetup) {
