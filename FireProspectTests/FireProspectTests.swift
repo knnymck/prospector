@@ -63,6 +63,14 @@ final class FireProspectTests: XCTestCase {
         XCTAssertEqual(KeywordExpansion.fallback(for: "Civil Engineering").keywords, ["Civil Engineering"])
     }
 
+    func testLocalModelExtractsJSONFromChatOutput() {
+        XCTAssertEqual(
+            LocalModelService.extractJSONObject(from: "Here is the result:\n{\"ready\":true}\nDone"),
+            "{\"ready\":true}"
+        )
+        XCTAssertEqual(LocalModelService.extractJSONObject(from: "plain response"), "plain response")
+    }
+
     func testEnrichmentCandidateAndPageLimitsStayBounded() {
         XCTAssertEqual(SiteLinkDiscoveryService.maximumCandidateCount, 30)
         XCTAssertEqual(SitemapAvailability.httpOnly.rawValue, "HTTP-only sitemap")

@@ -1,192 +1,143 @@
 import Foundation
+import MLXLLM
+import MLXLMCommon
 
 struct KeywordExpansion: Codable, Equatable, Sendable {
     static let maximumKeywordCount = 5
-
     let source: String
     let keywords: [String]
 
     init(source: String, keywords: [String]) throws {
         let source = source.trimmingCharacters(in: .whitespacesAndNewlines)
-        let cleaned = keywords
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        let cleaned = keywords.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty && $0.count <= 80 }
             .reduce(into: [String]()) { result, keyword in
-                if !result.contains(where: { $0.caseInsensitiveCompare(keyword) == .orderedSame }) {
-                    result.append(keyword)
-                }
+                if !result.contains(where: { $0.caseInsensitiveCompare(keyword) == .orderedSame }) { result.append(keyword) }
             }
-
-        guard !source.isEmpty, !cleaned.isEmpty, cleaned.count <= Self.maximumKeywordCount else {
-            throw LocalModelError.invalidExpansion
-        }
+        guard !source.isEmpty, !cleaned.isEmpty, cleaned.count <= Self.maximumKeywordCount else { throw LocalModelError.invalidExpansion }
         self.source = source
         self.keywords = cleaned
     }
 
-    static func fallback(for source: String) -> KeywordExpansion {
-        // The caller already rejects an empty category, so this cannot fail.
-        try! KeywordExpansion(source: source, keywords: [source])
-    }
+    static func fallback(for source: String) -> KeywordExpansion { try! KeywordExpansion(source: source, keywords: [source]) }
+}
+
+/// The one supported, tested model. This public MLX checkpoint does not require a Hugging Face token.
+struct LocalModelManifest: Sendable {
+    static let gemma4TwoB = LocalModelManifest(
+        displayName: "Gemma4 2B",
+        repositoryID: "mlx-community/gemma-2-2b-it-4bit",
+        detail: "Apple Silicon optimized • 4-bit • about 1.5 GB"
+    )
+    let displayName: String
+    let repositoryID: String
+    let detail: String
 }
 
 enum LocalModelAvailability: Equatable, Sendable {
-    case checking
-    case ready
-    case runtimeUnavailable
-    case modelMissing
+    case checking, ready, modelMissing
     case installing(Double?)
-
     var label: String {
         switch self {
-        case .checking: "Checking Gemma 4 2B…"
-        case .ready: "Gemma 4 2B ready"
-        case .runtimeUnavailable: "Local runtime unavailable"
-        case .modelMissing: "Gemma 4 2B not installed"
-        case .installing(let progress):
-            progress.map { "Installing Gemma 4 2B (\(Int($0 * 100))%)" } ?? "Installing Gemma 4 2B…"
+        case .checking: "Checking Gemma4 2B…"
+        case .ready: "Gemma4 2B ready with MLX"
+        case .modelMissing: "Gemma4 2B not installed"
+        case .installing(let progress): progress.map { "Installing Gemma4 2B (\(Int($0 * 100)))%" } ?? "Installing Gemma4 2B…"
         }
     }
 }
 
 enum LocalModelError: LocalizedError {
-    case runtimeUnavailable
-    case runtimeSetupTimedOut
-    case modelInstallationFailed
-    case invalidExpansion
-
+    case appleSiliconRequired, installationFailed(String), invalidExpansion
     var errorDescription: String? {
         switch self {
-        case .runtimeUnavailable: "Ollama is not running. Install and open Ollama to enable Gemma 4 2B."
-        case .runtimeSetupTimedOut: "Ollama did not become ready in time. Open Ollama, then choose Install Gemma 4 2B again."
-        case .modelInstallationFailed: "Gemma 4 2B could not be installed by the local runtime."
-        case .invalidExpansion: "The local model returned an invalid keyword expansion."
+        case .appleSiliconRequired: "Gemma4 2B requires an Apple Silicon Mac (M1 or newer)."
+        case .installationFailed(let message): "MLX could not install the model: \(message)"
+        case .invalidExpansion: "The local model returned invalid JSON. Try again."
         }
     }
 }
 
-/// Talks only to the user's local Ollama runtime. No prompt or business category leaves the Mac.
+/// Native Apple MLX inference. MLX downloads the public checkpoint from Hugging Face into its app cache.
 actor LocalModelService {
     static let shared = LocalModelService()
-    static let modelDefaultsKey = "localModelIdentifier"
-    static let defaultModel = "gemma4:2b"
+    static let manifest = LocalModelManifest.gemma4TwoB
+    private static let installedKey = "mlxGemma4TwoBInstalled"
 
-    nonisolated static var configuredModel: String {
-        let value = UserDefaults.standard.string(forKey: modelDefaultsKey)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return value.isEmpty ? defaultModel : value
-    }
+    private var container: ModelContainer?
 
-    nonisolated static func configure(model: String) {
-        UserDefaults.standard.set(model.trimmingCharacters(in: .whitespacesAndNewlines), forKey: modelDefaultsKey)
-    }
+    nonisolated static var configuredModel: String { manifest.repositoryID }
 
-    private let baseURL = URL(string: "http://127.0.0.1:11434")!
-    private let session: URLSession
-
-    init(session: URLSession = .shared) {
-        self.session = session
-    }
-
-    func availability() async -> LocalModelAvailability {
-        do {
-            let (data, response) = try await session.data(from: baseURL.appending(path: "api/tags"))
-            guard (response as? HTTPURLResponse)?.statusCode == 200 else { return .runtimeUnavailable }
-            let tags = try JSONDecoder().decode(TagsResponse.self, from: data)
-            let required = Self.configuredModel.lowercased()
-            return tags.models.contains(where: { $0.name.lowercased() == required }) ? .ready : .modelMissing
-        } catch {
-            return .runtimeUnavailable
-        }
+    func availability() -> LocalModelAvailability {
+        container != nil || UserDefaults.standard.bool(forKey: Self.installedKey) ? .ready : .modelMissing
     }
 
     func ensureInstalled(progress: (@Sendable (Double?) async -> Void)? = nil) async throws {
-        switch await availability() {
-        case .ready: return
-        case .runtimeUnavailable: throw LocalModelError.runtimeUnavailable
-        default: break
+        if container != nil { return }
+#if !arch(arm64)
+        throw LocalModelError.appleSiliconRequired
+#else
+        do {
+            await progress?(0)
+            let configuration = ModelConfiguration(id: Self.manifest.repositoryID)
+            container = try await LLMModelFactory.shared.loadContainer(configuration: configuration) { download in
+                Task { await progress?(download.fractionCompleted) }
+            }
+            UserDefaults.standard.set(true, forKey: Self.installedKey)
+            await progress?(1)
+        } catch {
+            UserDefaults.standard.set(false, forKey: Self.installedKey)
+            throw LocalModelError.installationFailed(error.localizedDescription)
         }
-
-        var request = URLRequest(url: baseURL.appending(path: "api/pull"))
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(PullRequest(name: Self.configuredModel, stream: false))
-        await progress?(nil)
-        let (_, response) = try await session.data(for: request)
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
-            throw LocalModelError.modelInstallationFailed
-        }
-        await progress?(1)
+#endif
     }
 
-    /// Waits for a newly installed or launched Ollama runtime before continuing setup.
-    func waitForRuntime(timeout: Duration = .seconds(600)) async throws {
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: timeout)
-
-        while clock.now < deadline {
-            if await availability() != .runtimeUnavailable { return }
-            try Task.checkCancellation()
-            try await clock.sleep(for: .seconds(2))
-        }
-        throw LocalModelError.runtimeSetupTimedOut
+    func verify() async throws {
+        let response = try await generateJSON(prompt: "Reply with JSON only: {\"ready\":true}", maximumTokens: 20)
+        guard response.contains("ready") else { throw LocalModelError.invalidExpansion }
     }
 
     func expand(_ category: String) async throws -> KeywordExpansion {
-        try await ensureInstalled()
         let prompt = """
         Return JSON only. Expand the business category into 1 to \(KeywordExpansion.maximumKeywordCount) precise MapKit search phrases.
         Avoid locations, explanations, broad terms, and unrelated industries.
         Schema: {"source":"the exact input","keywords":["phrase"]}
         Input: \(category)
         """
-        var request = URLRequest(url: baseURL.appending(path: "api/generate"))
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(GenerateRequest(model: Self.configuredModel, prompt: prompt, stream: false, format: "json"))
-        let (data, response) = try await session.data(for: request)
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw LocalModelError.invalidExpansion }
-        let envelope = try JSONDecoder().decode(GenerateResponse.self, from: data)
-        let decoded = try JSONDecoder().decode(ExpansionPayload.self, from: Data(envelope.response.utf8))
-        guard decoded.source.caseInsensitiveCompare(category.trimmingCharacters(in: .whitespacesAndNewlines)) == .orderedSame else {
-            throw LocalModelError.invalidExpansion
-        }
+        let decoded = try JSONDecoder().decode(ExpansionPayload.self, from: Data(try await generateJSON(prompt: prompt).utf8))
+        guard decoded.source.caseInsensitiveCompare(category.trimmingCharacters(in: .whitespacesAndNewlines)) == .orderedSame else { throw LocalModelError.invalidExpansion }
         return try KeywordExpansion(source: category, keywords: decoded.keywords)
     }
 
     func selectPersonnelURL(from candidates: [URL]) async throws -> URL {
         let bounded = Array(candidates.prefix(30))
         guard !bounded.isEmpty else { throw SiteEnrichmentError.noCandidateLinks }
-        try await ensureInstalled()
         let list = bounded.enumerated().map { "\($0.offset + 1). \($0.element.absoluteString)" }.joined(separator: "\n")
-        let prompt = """
-        Select the single URL most likely to contain business executives or staff names, job titles, and contact details.
-        Avoid careers, recruiting, projects, news, and generic history pages. Select only an exact URL from the list.
-        Respond as JSON only: {"best_url":"URL_HERE"}
-        \(list)
-        """
-        let response = try await generateJSON(prompt: prompt)
+        let response = try await generateJSON(prompt: "Select the URL most likely to list staff and contacts. Return JSON only: {\"best_url\":\"URL\"}\n\(list)")
         let choice = try JSONDecoder().decode(URLChoice.self, from: Data(response.utf8))
-        guard let selected = bounded.first(where: { $0.absoluteString == choice.bestURL }) else {
-            throw LocalModelError.invalidExpansion
-        }
+        guard let selected = bounded.first(where: { $0.absoluteString == choice.bestURL }) else { throw LocalModelError.invalidExpansion }
         return selected
     }
 
-    private func generateJSON(prompt: String) async throws -> String {
-        var request = URLRequest(url: baseURL.appending(path: "api/generate"))
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(GenerateRequest(model: Self.configuredModel, prompt: prompt, stream: false, format: "json"))
-        let (data, response) = try await session.data(for: request)
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw LocalModelError.invalidExpansion }
-        return try JSONDecoder().decode(GenerateResponse.self, from: data).response
+    private func generateJSON(prompt: String, maximumTokens: Int = 300) async throws -> String {
+        try await ensureInstalled()
+        guard let container else { throw LocalModelError.invalidExpansion }
+        let result = try await container.perform { context in
+            let input = try await context.processor.prepare(input: UserInput(prompt: prompt))
+            return try MLXLMCommon.generate(
+                input: input,
+                parameters: GenerateParameters(temperature: 0.1),
+                context: context
+            ) { tokens in tokens.count >= maximumTokens ? .stop : .more }
+        }
+        return Self.extractJSONObject(from: result.output)
     }
 
-    private struct TagsResponse: Decodable { let models: [Model] }
-    private struct Model: Decodable { let name: String }
-    private struct PullRequest: Encodable { let name: String; let stream: Bool }
-    private struct GenerateRequest: Encodable { let model: String; let prompt: String; let stream: Bool; let format: String }
-    private struct GenerateResponse: Decodable { let response: String }
+    static func extractJSONObject(from output: String) -> String {
+        guard let start = output.firstIndex(of: "{"), let end = output.lastIndex(of: "}"), start <= end else { return output }
+        return String(output[start...end])
+    }
+
     private struct ExpansionPayload: Decodable { let source: String; let keywords: [String] }
     private struct URLChoice: Decodable {
         let bestURL: String
@@ -196,7 +147,6 @@ actor LocalModelService {
 
 enum SemanticProspectPolicy {
     private static let excludedTerms = ["university", "college", "school", "government", "city hall", "county office"]
-
     static func accepts(_ candidate: ProspectCandidate) -> Bool {
         let value = "\(candidate.name) \(candidate.address.formatted)".lowercased()
         return !excludedTerms.contains(where: value.contains)

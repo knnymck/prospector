@@ -268,6 +268,7 @@ struct HomeView: View {
     @State private var creditStatus = "Checking monthly usage…"
     @State private var modelAvailability: LocalModelAvailability = .checking
     @State private var modelSetupMessage: String?
+    @State private var showingModelSetup = false
 
     var body: some View {
         ScrollView {
@@ -305,9 +306,7 @@ struct HomeView: View {
                         Text(modelAvailability.label)
                             .font(.callout).foregroundStyle(.secondary)
                         if modelAvailability != .ready {
-                            Button("Install Gemma 4 2B") {
-                                Task { await setUpLocalModel() }
-                            }
+                            Button("Install Gemma4 2B") { showingModelSetup = true }
                             .buttonStyle(.borderedProminent)
                             .disabled(isInstallingModel)
                             .accessibilityIdentifier("home.setup-local-model")
@@ -315,7 +314,7 @@ struct HomeView: View {
                         if let modelSetupMessage {
                             Text(modelSetupMessage)
                                 .font(.caption)
-                                .foregroundStyle(modelAvailability == .runtimeUnavailable ? Color.orange : Color.secondary)
+                                .foregroundStyle(Color.secondary)
                         }
                     }
                 }
@@ -354,6 +353,9 @@ struct HomeView: View {
         }
         .accessibilityIdentifier("detail.home")
         .task { await refreshStatuses() }
+        .sheet(isPresented: $showingModelSetup) {
+            LocalModelSetupWizard { Task { await refreshStatuses() } }
+        }
     }
 
     private func statusCard<Content: View>(title: String, image: String, @ViewBuilder content: () -> Content) -> some View {
@@ -371,26 +373,6 @@ struct HomeView: View {
     private var isInstallingModel: Bool {
         if case .installing = modelAvailability { return true }
         return false
-    }
-
-    @MainActor
-    private func setUpLocalModel() async {
-        modelAvailability = .installing(nil)
-        modelSetupMessage = nil
-        do {
-            if await LocalModelService.shared.availability() == .runtimeUnavailable {
-                modelSetupMessage = LocalModelSetupLauncher.launchRuntimeOrInstaller()
-                try await LocalModelService.shared.waitForRuntime()
-            }
-            try await LocalModelService.shared.ensureInstalled { progress in
-                await MainActor.run { self.modelAvailability = .installing(progress) }
-            }
-            modelAvailability = .ready
-            modelSetupMessage = "Gemma is installed locally and ready to use."
-        } catch {
-            modelAvailability = await LocalModelService.shared.availability()
-            modelSetupMessage = error.localizedDescription
-        }
     }
 
     @MainActor
@@ -914,7 +896,7 @@ struct SearchTabView: View {
         isSearching = true
         logOutput = "INITIATING CYCLE // Targets: \(targetZips.count) ZIP codes…\n"
         progressText = ""
-        expansionStatus = "Checking and loading Gemma 4 2B…"
+        expansionStatus = "Checking and loading Gemma4 2B with MLX…"
         acceptedCount = 0
         excludedCount = 0
         warnings = []
@@ -1491,8 +1473,8 @@ struct SettingsTabView: View {
     @State private var isFirecrawlKeyVisible = false
     @State private var firecrawlMessage: String = ""
     @State private var localModelMessage: String = ""
-    @State private var modelIdentifier = LocalModelService.configuredModel
     @State private var localModelAvailability: LocalModelAvailability = .checking
+    @State private var showingModelSetup = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 32) {
@@ -1561,16 +1543,17 @@ struct SettingsTabView: View {
                 Label(localModelAvailability.label, systemImage: localModelAvailability == .ready ? "checkmark.circle.fill" : "cpu")
                     .foregroundStyle(localModelAvailability == .ready ? Color.green : Color.secondary)
                     .accessibilityIdentifier("settings.local-model-status")
-                Text("One-click setup launches Ollama or opens its official installer, then downloads Gemma 4 2B automatically. Keep FireProspect open while setup completes.")
+                Text("Native MLX setup downloads the public Gemma checkpoint from Hugging Face and runs it privately on Apple Silicon. No account or access token is required.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                TextField("Ollama model tag", text: $modelIdentifier)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit { saveModelIdentifier() }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(LocalModelService.manifest.displayName).font(.headline)
+                    Text(LocalModelService.manifest.repositoryID).font(.caption.monospaced()).textSelection(.enabled)
+                    Text(LocalModelService.manifest.detail).font(.caption).foregroundStyle(.secondary)
+                }
                 HStack {
                     Button("Check Again") { Task { await refreshLocalModel() } }
-                    Button("Save Model Tag") { saveModelIdentifier() }
-                    Button("Install Gemma 4 2B") { Task { await installLocalModel() } }
+                    Button("Install Gemma4 2B") { showingModelSetup = true }
                         .buttonStyle(.borderedProminent)
                         .disabled(localModelAvailability == .ready || isInstallingModel)
                         .accessibilityIdentifier("settings.install-local-model")
@@ -1595,17 +1578,14 @@ struct SettingsTabView: View {
             firecrawlMessage = firecrawlKey.isEmpty ? "Not configured." : "Configured in Keychain."
             Task { await refreshLocalModel() }
         }
+        .sheet(isPresented: $showingModelSetup) {
+            LocalModelSetupWizard { Task { await refreshLocalModel() } }
+        }
     }
 
     private var isInstallingModel: Bool {
         if case .installing = localModelAvailability { return true }
         return false
-    }
-
-    private func saveModelIdentifier() {
-        LocalModelService.configure(model: modelIdentifier)
-        localModelMessage = "Model tag saved. Check availability before installing."
-        Task { await refreshLocalModel() }
     }
 
     @MainActor
@@ -1614,49 +1594,6 @@ struct SettingsTabView: View {
         localModelAvailability = await LocalModelService.shared.availability()
     }
 
-    @MainActor
-    private func installLocalModel() async {
-        localModelAvailability = .installing(nil)
-        localModelMessage = "Checking required local components…"
-        do {
-            if await LocalModelService.shared.availability() == .runtimeUnavailable {
-                localModelMessage = LocalModelSetupLauncher.launchRuntimeOrInstaller()
-                try await LocalModelService.shared.waitForRuntime()
-            }
-            localModelMessage = "Ollama is ready. Downloading Gemma 4 2B…"
-            try await LocalModelService.shared.ensureInstalled { progress in
-                await MainActor.run { self.localModelAvailability = .installing(progress) }
-            }
-            localModelAvailability = .ready
-            localModelMessage = "Gemma 4 2B and its required runtime are installed and ready."
-        } catch {
-            localModelAvailability = await LocalModelService.shared.availability()
-            localModelMessage = error.localizedDescription
-        }
-    }
-}
-
-@MainActor
-private enum LocalModelSetupLauncher {
-    private static let ollamaDownloadURL = URL(string: "https://ollama.com/download/mac")!
-
-    /// Starts an existing Ollama installation or opens its official macOS installer.
-    /// macOS still asks the user to approve installation of the separate runtime.
-    static func launchRuntimeOrInstaller() -> String {
-        let candidates = [
-            URL(fileURLWithPath: "/Applications/Ollama.app"),
-            FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent("Applications/Ollama.app")
-        ]
-
-        if let application = candidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }) {
-            NSWorkspace.shared.open(application)
-            return "Launching Ollama. Gemma 4 2B will download automatically when the runtime is ready…"
-        }
-
-        NSWorkspace.shared.open(ollamaDownloadURL)
-        return "The official Ollama installer is open. Install and launch Ollama; Gemma 4 2B will then download automatically."
-    }
 }
 
 private extension NSSavePanel {
