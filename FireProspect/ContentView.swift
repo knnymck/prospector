@@ -536,11 +536,11 @@ struct SearchTabView: View {
     }
 
     private var shouldShowStateSuggestions: Bool {
-        isStateDropdownFocused
+        isStateDropdownFocused && !stateSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var shouldShowCitySuggestions: Bool {
-        isCityDropdownFocused && !selectedStates.isEmpty && !selectAllCities
+        isCityDropdownFocused && !citySearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var searchScope: SearchScope {
@@ -596,16 +596,6 @@ struct SearchTabView: View {
         }
     }
 
-    private func suggestionList<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 2) { content() }
-        }
-        .frame(maxWidth: .infinity, minHeight: 160, maxHeight: 160)
-        .background(Color(nsColor: .controlBackgroundColor))
-        .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Color.primary.opacity(0.15)))
-        .shadow(color: .black.opacity(0.16), radius: 8, y: 4)
-    }
-    
     private var targetStatesColumn: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -644,25 +634,24 @@ struct SearchTabView: View {
                     if let first = filteredStateSuggestions.first { addState(first.id) }
                 }
                 
-            }
-            .overlay(alignment: .top) {
                 if shouldShowStateSuggestions {
-                    suggestionList {
-                        if filteredStateSuggestions.isEmpty {
-                            Text("No states matching filter.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .padding(8)
-                        } else {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 2) {
                             ForEach(filteredStateSuggestions) { state in
-                                PickerSuggestionRow(label: state.name, systemImage: nil) { addState(state.id) }
+                                PickerSuggestionRow(label: state.name, systemImage: nil) {
+                                    addState(state.id)
+                                }
                             }
                         }
                     }
-                    .offset(y: 38)
+                    .frame(maxHeight: 160)
+                    .background(Color(nsColor: .controlBackgroundColor))
+                    .overlay(
+                        Rectangle()
+                            .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+                    )
                 }
             }
-            .zIndex(2)
             
             // Active States List
             if !selectedStates.isEmpty {
@@ -680,7 +669,6 @@ struct SearchTabView: View {
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 8))
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.primary.opacity(0.12)))
-        .zIndex(isStateDropdownFocused ? 3 : 1)
     }
     
     private var targetCitiesColumn: some View {
@@ -720,11 +708,10 @@ struct SearchTabView: View {
                     if let first = filteredCities.first { addCityToSelection(first) }
                 }
             
-            // The menu overlays the card so filtering never changes the page height.
-            Color.clear.frame(height: 0)
-                .overlay(alignment: .top) {
-                    if shouldShowCitySuggestions {
-                        suggestionList {
+            // Filtered City List
+            if shouldShowCitySuggestions {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 1) {
                         if filteredCities.isEmpty {
                             Text("No cities matching filter.")
                                 .font(.system(size: 10, design: .default))
@@ -739,16 +726,19 @@ struct SearchTabView: View {
                             }
                         }
                     }
-                        .offset(y: -1)
-                    }
                 }
-                .zIndex(2)
+                .frame(height: 160)
+                .background(Color(nsColor: .controlBackgroundColor))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+                )
+            }
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 8))
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.primary.opacity(0.12)))
-        .zIndex(isCityDropdownFocused ? 3 : 1)
     }
     
     // Unified "City, State" Pill Section
@@ -941,13 +931,13 @@ struct SearchTabView: View {
         selectedCityIDs.insert(city.id)
         selectedCityRecords[city.id] = city
         citySearch = ""
-        isCityDropdownFocused = true
+        isCityDropdownFocused = false
     }
 
     private func addState(_ stateID: StateID) {
         selectedStates.insert(stateID)
         stateSearch = ""
-        isStateDropdownFocused = true
+        isStateDropdownFocused = false
     }
 
     private func removeCity(_ cityID: CityID) {
@@ -1415,7 +1405,11 @@ struct ProspectsView: View {
                 .lineLimit(1).frame(width: width, alignment: .leading)
             Group {
                 if let url = enrichmentReceipts[row.id]?.selectedURL {
-                    Link("Open", destination: url)
+                    Link(url.absoluteString, destination: url)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .help(url.absoluteString)
+                        .accessibilityLabel("Open personnel page for \(row.prospect.name)")
                 } else {
                     Text("—").foregroundStyle(.secondary)
                 }
