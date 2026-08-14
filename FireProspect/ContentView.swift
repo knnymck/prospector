@@ -437,7 +437,7 @@ struct FirecrawlLogsView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Firecrawl activity").font(.title2.weight(.semibold))
-                    Text("A local record of enrichment pages submitted to Firecrawl and the credits observed before and after each test.")
+                    Text("A local record of pages crawled with Firecrawl and the credits observed before and after each crawl.")
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -446,7 +446,7 @@ struct FirecrawlLogsView: View {
             }
 
             if activities.isEmpty {
-                ContentUnavailableView("No Firecrawl Activity", systemImage: "doc.text.magnifyingglass", description: Text("Test an enrichment from a prospect row to create a log entry."))
+                ContentUnavailableView("No Firecrawl Activity", systemImage: "doc.text.magnifyingglass", description: Text("Crawl a prospect row to create a log entry."))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List(activities) { activity in
@@ -464,7 +464,7 @@ struct FirecrawlLogsView: View {
                         } else {
                             LabeledContent("Page submitted", value: "None")
                         }
-                        LabeledContent("Discovery", value: activity.usedMapFallback ? "Firecrawl Map fallback" : "Cached/native sitemap or homepage")
+                        LabeledContent("Discovery", value: activity.usedMapFallback ? "Firecrawl Map fallback" : "Homepage navigation")
                         LabeledContent("Pages submitted", value: activity.selectedPage == nil ? "0" : "1")
                         LabeledContent("Credits observed", value: activity.creditsUsed.map(String.init) ?? "Unavailable")
                         Text(activity.outcome).font(.callout).foregroundStyle(.secondary)
@@ -519,6 +519,9 @@ struct SearchTabView: View {
     @State private var acceptedCount = 0
     @State private var excludedCount = 0
     @State private var warnings: [String] = []
+    @State private var usesAIKeywordGeneration = true
+    @State private var keywordGenerationProgress = 0.0
+    @State private var isGeneratingKeywords = false
     
     private var filteredStateSuggestions: [StateRecord] {
         allStates.filter { state in
@@ -533,11 +536,11 @@ struct SearchTabView: View {
     }
 
     private var shouldShowStateSuggestions: Bool {
-        isStateDropdownFocused && !stateSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        isStateDropdownFocused
     }
 
     private var shouldShowCitySuggestions: Bool {
-        isCityDropdownFocused && !citySearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        isCityDropdownFocused && !selectedStates.isEmpty && !selectAllCities
     }
 
     private var searchScope: SearchScope {
@@ -592,6 +595,16 @@ struct SearchTabView: View {
             unifiedLocationPillsView
         }
     }
+
+    private func suggestionList<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 2) { content() }
+        }
+        .frame(maxWidth: .infinity, minHeight: 160, maxHeight: 160)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Color.primary.opacity(0.15)))
+        .shadow(color: .black.opacity(0.16), radius: 8, y: 4)
+    }
     
     private var targetStatesColumn: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -631,24 +644,25 @@ struct SearchTabView: View {
                     if let first = filteredStateSuggestions.first { addState(first.id) }
                 }
                 
+            }
+            .overlay(alignment: .top) {
                 if shouldShowStateSuggestions {
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 2) {
+                    suggestionList {
+                        if filteredStateSuggestions.isEmpty {
+                            Text("No states matching filter.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .padding(8)
+                        } else {
                             ForEach(filteredStateSuggestions) { state in
-                                PickerSuggestionRow(label: state.name, systemImage: nil) {
-                                    addState(state.id)
-                                }
+                                PickerSuggestionRow(label: state.name, systemImage: nil) { addState(state.id) }
                             }
                         }
                     }
-                    .frame(maxHeight: 160)
-                    .background(Color(nsColor: .controlBackgroundColor))
-                    .overlay(
-                        Rectangle()
-                            .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
-                    )
+                    .offset(y: 38)
                 }
             }
+            .zIndex(2)
             
             // Active States List
             if !selectedStates.isEmpty {
@@ -666,6 +680,7 @@ struct SearchTabView: View {
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 8))
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.primary.opacity(0.12)))
+        .zIndex(isStateDropdownFocused ? 3 : 1)
     }
     
     private var targetCitiesColumn: some View {
@@ -705,10 +720,11 @@ struct SearchTabView: View {
                     if let first = filteredCities.first { addCityToSelection(first) }
                 }
             
-            // Filtered City List
-            if shouldShowCitySuggestions {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 1) {
+            // The menu overlays the card so filtering never changes the page height.
+            Color.clear.frame(height: 0)
+                .overlay(alignment: .top) {
+                    if shouldShowCitySuggestions {
+                        suggestionList {
                         if filteredCities.isEmpty {
                             Text("No cities matching filter.")
                                 .font(.system(size: 10, design: .default))
@@ -723,19 +739,16 @@ struct SearchTabView: View {
                             }
                         }
                     }
+                        .offset(y: -1)
+                    }
                 }
-                .frame(height: 160)
-                .background(Color(nsColor: .controlBackgroundColor))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4)
-                        .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
-                )
-            }
+                .zIndex(2)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 8))
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.primary.opacity(0.12)))
+        .zIndex(isCityDropdownFocused ? 3 : 1)
     }
     
     // Unified "City, State" Pill Section
@@ -866,9 +879,24 @@ struct SearchTabView: View {
 
     private var searchStatusSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Search intelligence", systemImage: "sparkles")
-                .font(.headline)
+            HStack {
+                Label("Search intelligence", systemImage: "sparkles").font(.headline)
+                Spacer()
+                Toggle("AI keyword generation", isOn: $usesAIKeywordGeneration)
+                    .toggleStyle(.switch)
+                    .disabled(isSearching)
+                    .accessibilityIdentifier("search.ai-keyword-generation")
+            }
             Text(expansionStatus)
+            if isGeneratingKeywords {
+                ProgressView(value: keywordGenerationProgress, total: 1) {
+                    Text("Generating search keywords…")
+                } currentValueLabel: {
+                    Text("\(Int(keywordGenerationProgress * 100))%").monospacedDigit()
+                }
+                .progressViewStyle(.linear)
+                .accessibilityIdentifier("search.keyword-generation-progress")
+            }
             HStack {
                 Label("\(acceptedCount) accepted", systemImage: "checkmark.circle")
                 Label("\(excludedCount) excluded", systemImage: "minus.circle")
@@ -913,13 +941,13 @@ struct SearchTabView: View {
         selectedCityIDs.insert(city.id)
         selectedCityRecords[city.id] = city
         citySearch = ""
-        isCityDropdownFocused = false
+        isCityDropdownFocused = true
     }
 
     private func addState(_ stateID: StateID) {
         selectedStates.insert(stateID)
         stateSearch = ""
-        isStateDropdownFocused = false
+        isStateDropdownFocused = true
     }
 
     private func removeCity(_ cityID: CityID) {
@@ -993,7 +1021,11 @@ struct SearchTabView: View {
         isSearching = true
         logOutput = "INITIATING CYCLE // Targets: \(targetZips.count) ZIP codes…\n"
         progressText = ""
-        expansionStatus = "Checking and loading Gemma 3 1B with MLX…"
+        expansionStatus = usesAIKeywordGeneration
+            ? "Checking and loading Gemma 3 1B with MLX…"
+            : "AI keyword generation disabled; preparing the original category…"
+        keywordGenerationProgress = 0
+        isGeneratingKeywords = usesAIKeywordGeneration
         acceptedCount = 0
         excludedCount = 0
         warnings = []
@@ -1002,6 +1034,7 @@ struct SearchTabView: View {
         let apiKey = KeychainHelper.getKey()
         let zipsToSearch = targetZips
         let cat = category.trimmingCharacters(in: .whitespacesAndNewlines)
+        let shouldGenerateKeywords = usesAIKeywordGeneration
         let searchedLocations = selectAllCities
             ? selectedStates.sorted().map { stateID in
                 "All cities in \(allStates.first(where: { $0.id == stateID })?.name ?? stateID.rawValue)"
@@ -1020,12 +1053,29 @@ struct SearchTabView: View {
             var processed = 0
             var excluded = 0
             var nonfatalWarnings: [String] = []
-            let expansionResult = await KeywordExpansionResolver(model: LocalModelService.shared).resolve(cat)
+            let progressTask = shouldGenerateKeywords ? Task { @MainActor in
+                while !Task.isCancelled && keywordGenerationProgress < 0.9 {
+                    try? await Task.sleep(for: .milliseconds(180))
+                    guard !Task.isCancelled else { return }
+                    keywordGenerationProgress = min(keywordGenerationProgress + 0.06, 0.9)
+                }
+            } : nil
+            let expansionResult: KeywordExpansionResolution
+            if shouldGenerateKeywords {
+                expansionResult = await KeywordExpansionResolver(model: LocalModelService.shared).resolve(cat)
+            } else {
+                expansionResult = KeywordExpansionResolution(expansion: .fallback(for: cat), status: nil)
+            }
+            progressTask?.cancel()
             let expansion = expansionResult.expansion
             if let status = expansionResult.status { nonfatalWarnings.append(status) }
 
             await MainActor.run {
-                self.expansionStatus = expansion.keywords.count == 1 && expansion.keywords[0] == cat
+                self.keywordGenerationProgress = shouldGenerateKeywords ? 1 : 0
+                self.isGeneratingKeywords = false
+                self.expansionStatus = !shouldGenerateKeywords
+                    ? "AI DISABLED // Searching the original category: \(cat)"
+                    : expansion.keywords.count == 1 && expansion.keywords[0] == cat
                     ? "FALLBACK // \(cat)"
                     : "EXPANDED // \(expansion.keywords.joined(separator: " • "))"
             }
@@ -1106,6 +1156,7 @@ struct ProspectsView: View {
     @State private var enrichmentProgress = 0.0
     @State private var selectedProspectID: ProspectID?
     @State private var pendingProspect: ProspectRecord?
+    @State private var confirmingCrawlAll = false
     @State private var enrichmentReceipts: [ProspectID: EnrichmentReceipt] = [:]
     @State private var sitemapAvailability: [ProspectID: SitemapAvailability] = [:]
     @State private var isCheckingSitemaps = false
@@ -1114,6 +1165,7 @@ struct ProspectsView: View {
     @State private var creditMessage: String?
     @State private var hoveredProspectID: ProspectID?
     @State private var presentedSitemapID: ProspectID?
+    @State private var enrichingProspectID: ProspectID?
 
     init(searchResults: [ProspectRecord], keywords: [String] = [], locations: [String] = []) {
         self.searchResults = searchResults
@@ -1166,11 +1218,11 @@ struct ProspectsView: View {
                 .disabled(searchResults.isEmpty || isCheckingSitemaps)
                 .help("Checks /sitemap.xml directly with Swift HTTP. This does not use Firecrawl credits.")
 
-                Button("Test Enrichment (1 Page)", systemImage: "person.text.rectangle") {
-                    pendingProspect = selectedProspect
+                Button("Crawl All Pages", systemImage: "person.text.rectangle") {
+                    confirmingCrawlAll = true
                 }
-                .disabled(selectedProspect == nil || isEnriching || KeychainHelper.getKey().isEmpty)
-                .help(KeychainHelper.getKey().isEmpty ? "Add a Firecrawl API key in Settings." : "Submits exactly one selected page. Firecrawl bills extraction by usage, not a guaranteed single credit.")
+                .disabled(searchResults.isEmpty || isEnriching || KeychainHelper.getKey().isEmpty)
+                .help(KeychainHelper.getKey().isEmpty ? "Add a Firecrawl API key in Settings." : "Crawls the best personnel page found for every prospect.")
             }
 
             if let message = exportState.message {
@@ -1242,9 +1294,14 @@ struct ProspectsView: View {
         } message: { prospect in
             Text("Gemma will choose one personnel page for \(prospect.name). Only that page will be submitted, but Firecrawl's AI extraction may consume multiple usage-based credits.")
         }
+        .confirmationDialog("Crawl all prospect pages?", isPresented: $confirmingCrawlAll) {
+            Button("Crawl \(searchResults.count) Pages") { Task { await enrichAll() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("FireProspect will discover and crawl one personnel page for each result. Firecrawl charges are usage-based.")
+        }
         .task {
             await refreshCredits()
-            await checkSitemaps(force: false)
         }
     }
 
@@ -1280,7 +1337,7 @@ struct ProspectsView: View {
 
     private var frozenProspectsTable: some View {
         GeometryReader { geometry in
-            let detailWidth = max(140, (geometry.size.width - 354) / 6)
+            let detailWidth = max(140, (geometry.size.width - 354) / 7)
             ScrollView(.vertical) {
                 HStack(alignment: .top, spacing: 0) {
                     VStack(spacing: 0) {
@@ -1294,7 +1351,7 @@ struct ProspectsView: View {
 
                     ScrollView(.horizontal) {
                         VStack(spacing: 0) {
-                            detailRow(values: ["Address", "Phone", "Website", "Team Page", "Found Emails", "Sitemap"], width: detailWidth, isHeader: true)
+                            detailRow(values: ["Address", "Phone", "Website", "Team Page", "Found Emails", "Sitemap", "Crawl"], width: detailWidth, isHeader: true)
                             ForEach(rows) { row in
                                 detailProspectRow(row, width: detailWidth)
                             }
@@ -1366,6 +1423,14 @@ struct ProspectsView: View {
             .frame(width: width, alignment: .leading)
             detailCell(foundEmails(for: row.id), width: width).textSelection(.enabled)
             sitemapCell(for: row, width: width)
+            Button(enrichingProspectID == row.id ? "Crawling…" : "Crawl") {
+                if let prospect = searchResults.first(where: { $0.id == row.id }) { pendingProspect = prospect }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(isEnriching || KeychainHelper.getKey().isEmpty)
+            .frame(width: width, alignment: .leading)
+            .accessibilityLabel("Crawl \(row.prospect.name)")
         }
         .font(.callout)
         .padding(.horizontal, 12)
@@ -1518,6 +1583,7 @@ struct ProspectsView: View {
     private func enrich(_ prospect: ProspectRecord) async {
         let creditsBefore = remainingCredits
         isEnriching = true
+        enrichingProspectID = prospect.id
         enrichmentProgress = 0
         let progressTask = Task { @MainActor in
             while !Task.isCancelled && enrichmentProgress < 0.95 {
@@ -1526,7 +1592,7 @@ struct ProspectsView: View {
                 enrichmentProgress = min(enrichmentProgress + 0.015, 0.95)
             }
         }
-        enrichmentMessage = "FREE DISCOVERY // Checking HTTPS and HTTP sitemap availability…"
+        enrichmentMessage = "FREE DISCOVERY // Inspecting homepage header, navigation, and footer links…"
         do {
             let receipt = try await SiteEnrichmentService.shared.enrichOnePage(
                 website: prospect.websiteURL,
@@ -1539,14 +1605,12 @@ struct ProspectsView: View {
             }
             enrichmentMessage = """
             \(enhancementStatus)
-            SITEMAP // \(receipt.discovery.sitemapAvailability.rawValue)
-            DISCOVERY // \(receipt.usedFirecrawlMap ? "Firecrawl map fallback" : "Native Swift")
+            NAVIGATION // \(receipt.discovery.links.count) homepage candidate link(s)
+            DISCOVERY // Header, nav, and footer via native Swift HTTP
             SELECTED // \(receipt.selectedURL?.absoluteString ?? "Skipped")
             PEOPLE // \(receipt.personnel.people.count)
             """
             enrichmentReceipts[prospect.id] = receipt
-            sitemapAvailability[prospect.id] = receipt.discovery.sitemapAvailability
-            SitemapAvailabilityCache.store(receipt.discovery.sitemapAvailability, for: prospect.websiteURL)
             await refreshCredits()
             try? FirecrawlActivityStore.append(FirecrawlActivity(
                 website: prospect.websiteURL,
@@ -1572,6 +1636,18 @@ struct ProspectsView: View {
         enrichmentProgress = 1
         try? await Task.sleep(for: .milliseconds(350))
         isEnriching = false
+        enrichingProspectID = nil
+    }
+
+    @MainActor
+    private func enrichAll() async {
+        guard !searchResults.isEmpty else { return }
+        let total = searchResults.count
+        for (index, prospect) in searchResults.enumerated() {
+            enrichmentMessage = "CRAWL ALL // \(index + 1) of \(total): \(prospect.name)"
+            await enrich(prospect)
+        }
+        enrichmentMessage = "CRAWL ALL COMPLETE // Processed \(total) prospect page\(total == 1 ? "" : "s")."
     }
 
     @MainActor
