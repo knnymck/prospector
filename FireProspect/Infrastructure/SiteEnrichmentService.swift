@@ -50,8 +50,8 @@ enum SiteEnrichmentError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .invalidWebsite: "The prospect website URL is invalid."
-        case .noCandidateLinks: "No same-site team or leadership URL could be discovered."
+        case .invalidWebsite: "This business doesn’t have a usable website."
+        case .noCandidateLinks: "We couldn’t find a team or staff page on this website."
         }
     }
 }

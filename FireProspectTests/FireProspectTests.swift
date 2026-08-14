@@ -96,7 +96,7 @@ final class FireProspectTests: XCTestCase {
     }
 
     func testLocalModelManifestUsesTheCheckpointFormalName() {
-        XCTAssertEqual(LocalModelService.manifest.displayName, "Gemma 3 1B")
+        XCTAssertEqual(LocalModelService.manifest.displayName, "On-device AI")
         XCTAssertEqual(LocalModelService.manifest.repositoryID, "mlx-community/gemma-3-1b-it-4bit")
     }
 

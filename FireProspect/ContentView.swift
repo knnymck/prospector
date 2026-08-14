@@ -360,7 +360,7 @@ struct HomeView: View {
                     statusCard(title: "Firecrawl", image: "flame.fill") {
                         if !isFirecrawlConnected {
                             Text("Firecrawl not connected").font(.headline)
-                            Text("Connect an API key to view this month's remaining crawl credits.")
+                            Text("Connect an API key to see how many website lookups you have left this month.")
                                 .font(.callout).foregroundStyle(.secondary)
                             Button("Connect Firecrawl", action: openSettings)
                                 .buttonStyle(.borderedProminent)
@@ -368,12 +368,12 @@ struct HomeView: View {
                             Text(remainingCredits.map { String($0) } ?? "—")
                                 .font(.system(size: 34, weight: .semibold, design: .rounded))
                                 .monospacedDigit()
-                            Text(remainingCredits == nil ? creditStatus : "crawl credits remaining this month")
+                            Text(remainingCredits == nil ? creditStatus : "website lookups remaining this month")
                                 .font(.callout).foregroundStyle(.secondary)
                         }
                     }
 
-                    statusCard(title: "Local SLM", image: "cpu") {
+                    statusCard(title: "On-device AI", image: "cpu") {
                         Label(modelAvailability == .ready ? "Active" : "Not active", systemImage: modelAvailability == .ready ? "checkmark.circle.fill" : "pause.circle")
                             .font(.headline)
                             .foregroundStyle(modelAvailability == .ready ? Color.green : Color.secondary)
@@ -382,7 +382,7 @@ struct HomeView: View {
                         Text(modelAvailability.label)
                             .font(.callout).foregroundStyle(.secondary)
                         if modelAvailability != .ready {
-                            Button("Install Gemma 3 1B") { showingModelSetup = true }
+                            Button("Install on-device AI") { showingModelSetup = true }
                             .buttonStyle(.borderedProminent)
                             .disabled(isInstallingModel)
                             .accessibilityIdentifier("home.setup-local-model")
@@ -485,7 +485,7 @@ struct HomeView: View {
         creditStatus = "Checking monthly usage…"
         do {
             remainingCredits = try await FirecrawlService.shared.remainingCredits(apiKey: key)
-            creditStatus = "crawl credits remaining this month"
+            creditStatus = "website lookups remaining this month"
         } catch {
             remainingCredits = nil
             creditStatus = "Monthly usage is currently unavailable."
@@ -503,8 +503,8 @@ struct FirecrawlLogsView: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Firecrawl activity").font(.title2.weight(.semibold))
-                    Text("A local record of pages crawled with Firecrawl and the credits observed before and after each crawl.")
+                    Text("Website lookups").font(.title2.weight(.semibold))
+                    Text("A history of company pages you looked up, and how many credits each one used.")
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -513,7 +513,7 @@ struct FirecrawlLogsView: View {
             }
 
             if activities.isEmpty {
-                ContentUnavailableView("No Firecrawl Activity", systemImage: "doc.text.magnifyingglass", description: Text("Crawl a prospect row to create a log entry."))
+                ContentUnavailableView("No lookups yet", systemImage: "doc.text.magnifyingglass", description: Text("Look up people on a business to see activity here."))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List(activities) { activity in
@@ -525,15 +525,14 @@ struct FirecrawlLogsView: View {
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         if let selectedPage = activity.selectedPage {
-                            LabeledContent("Page submitted") {
+                            LabeledContent("Page opened") {
                                 Link(selectedPage.absoluteString, destination: selectedPage).lineLimit(1)
                             }
                         } else {
-                            LabeledContent("Page submitted", value: "None")
+                            LabeledContent("Page opened", value: "None")
                         }
-                        LabeledContent("Discovery", value: activity.usedMapFallback ? "Firecrawl Map fallback" : "Homepage navigation")
-                        LabeledContent("Pages submitted", value: activity.selectedPage == nil ? "0" : "1")
-                        LabeledContent("Credits observed", value: activity.creditsUsed.map(String.init) ?? "Unavailable")
+                        LabeledContent("How we found it", value: activity.usedMapFallback ? "Backup website search" : "Company website menu")
+                        LabeledContent("Credits used", value: activity.creditsUsed.map(String.init) ?? "Unavailable")
                         Text(activity.outcome).font(.callout).foregroundStyle(.secondary)
                     }
                     .padding(.vertical, 6)
@@ -544,7 +543,7 @@ struct FirecrawlLogsView: View {
         .padding(24)
         .accessibilityIdentifier("detail.logs")
         .task { activities = FirecrawlActivityStore.load() }
-        .confirmationDialog("Clear Firecrawl logs?", isPresented: $confirmingClear) {
+        .confirmationDialog("Clear lookup history?", isPresented: $confirmingClear) {
             Button("Clear Logs", role: .destructive) {
                 try? FirecrawlActivityStore.clear()
                 activities = []
@@ -580,13 +579,13 @@ struct SearchTabView: View {
     
     // Execution and results state
     @State private var isSearching = false
-    @State private var logOutput = "READY // Select target state and city vectors to initiate search cycle."
+    @State private var logOutput = "Choose a state and city, then start a search."
     @State private var progressText = ""
-    @State private var expansionStatus = "Keyword expansion has not run."
+    @State private var expansionStatus = "Related search terms are off. We’ll search the category you enter."
     @State private var acceptedCount = 0
     @State private var excludedCount = 0
     @State private var warnings: [String] = []
-    @State private var usesAIKeywordGeneration = true
+    @State private var usesAIKeywordGeneration = false
     @State private var keywordGenerationProgress = 0.0
     @State private var isGeneratingKeywords = false
     
@@ -888,7 +887,7 @@ struct SearchTabView: View {
                     
                     Text(targetZips.isEmpty ?
                          "Choose at least one state and city to define the search area." :
-                         "FireProspect will search the selected category across this area.")
+                         "We’ll search this category across the area you selected.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
@@ -937,17 +936,19 @@ struct SearchTabView: View {
     private var searchStatusSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Label("Search intelligence", systemImage: "sparkles").font(.headline)
+                Label("Search options", systemImage: "sparkles").font(.headline)
                 Spacer()
-                Toggle("AI keyword generation", isOn: $usesAIKeywordGeneration)
+                Toggle("Suggest related search terms", isOn: $usesAIKeywordGeneration)
                     .toggleStyle(.switch)
                     .disabled(isSearching)
                     .accessibilityIdentifier("search.ai-keyword-generation")
             }
+            Text("When this is on, the app can add related business types to your search. Leave it off to search only what you typed.")
+                .foregroundStyle(.secondary)
             Text(expansionStatus)
             if isGeneratingKeywords {
                 ProgressView(value: keywordGenerationProgress, total: 1) {
-                    Text("Generating search keywords…")
+                    Text("Finding related search terms…")
                 } currentValueLabel: {
                     Text("\(Int(keywordGenerationProgress * 100))%").monospacedDigit()
                 }
@@ -955,8 +956,8 @@ struct SearchTabView: View {
                 .accessibilityIdentifier("search.keyword-generation-progress")
             }
             HStack {
-                Label("\(acceptedCount) accepted", systemImage: "checkmark.circle")
-                Label("\(excludedCount) excluded", systemImage: "minus.circle")
+                Label("\(acceptedCount) found", systemImage: "checkmark.circle")
+                Label("\(excludedCount) skipped", systemImage: "minus.circle")
             }
             .foregroundStyle(.secondary)
             if !warnings.isEmpty {
@@ -1076,11 +1077,11 @@ struct SearchTabView: View {
     
     private func runMultiZipSearch() {
         isSearching = true
-        logOutput = "INITIATING CYCLE // Targets: \(targetZips.count) ZIP codes…\n"
+        logOutput = "Starting search across \(targetZips.count) ZIP codes…"
         progressText = ""
         expansionStatus = usesAIKeywordGeneration
-            ? "Checking and loading Gemma 3 1B with MLX…"
-            : "AI keyword generation disabled; preparing the original category…"
+            ? "Preparing related search terms…"
+            : "Using your category as entered."
         keywordGenerationProgress = 0
         isGeneratingKeywords = usesAIKeywordGeneration
         acceptedCount = 0
@@ -1131,10 +1132,10 @@ struct SearchTabView: View {
                 self.keywordGenerationProgress = shouldGenerateKeywords ? 1 : 0
                 self.isGeneratingKeywords = false
                 self.expansionStatus = !shouldGenerateKeywords
-                    ? "AI DISABLED // Searching the original category: \(cat)"
+                    ? "Using your category as entered: \(cat)"
                     : expansion.keywords.count == 1 && expansion.keywords[0] == cat
-                    ? "FALLBACK // \(cat)"
-                    : "EXPANDED // \(expansion.keywords.joined(separator: " • "))"
+                    ? "Using your category as entered: \(cat)"
+                    : "Also searching: \(expansion.keywords.joined(separator: " • "))"
             }
             
             for zip in zipsToSearch {
@@ -1161,7 +1162,7 @@ struct SearchTabView: View {
                 
                 await MainActor.run {
                     self.progressText = "[\(current)/\(total)]"
-                    self.logOutput = "PROCESSING // \(current) of \(total) ZIPs resolved.\nDISCOVERED // \(foundCount) unique domain vectors."
+                    self.logOutput = "Searching ZIP \(current) of \(total).\nFound \(foundCount) businesses so far."
                     self.acceptedCount = foundCount
                     self.excludedCount = excludedSoFar
                 }
@@ -1175,11 +1176,11 @@ struct SearchTabView: View {
                 .map { $0.persisted() }
             
             // Build the log string in a mutable buffer, then lock it into a `let` constant
-            var logBuffer = "CYCLE COMPLETE // Discovered \(items.count) unique domain(s) across \(zipsToSearch.count) ZIP(s).\n\n"
+            var logBuffer = "Search complete. Found \(items.count) businesses across \(zipsToSearch.count) ZIP codes.\n\n"
             if apiKey.isEmpty {
-                logBuffer += "STATUS // Notice: No Firecrawl API key configured in Settings."
+                logBuffer += "Add a Firecrawl API key in Settings to look up people on company websites."
             } else {
-                logBuffer += "STATUS // Firecrawl key validated. Ready for extraction sequence."
+                logBuffer += "Firecrawl is connected. You can look up people on company websites."
             }
             let finalLog = logBuffer
             let displayedWarnings = Array(nonfatalWarnings.prefix(5))
@@ -1212,7 +1213,7 @@ struct NewListSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text("Create a New List").font(.title2.weight(.semibold))
-            Text("Give this target-company list a name.").foregroundStyle(.secondary)
+            Text("Give this list a name.").foregroundStyle(.secondary)
             TextField("List name", text: $name)
                 .textFieldStyle(.roundedBorder)
                 .onSubmit(create)
@@ -1266,6 +1267,7 @@ struct ProspectsView: View {
     @State private var hoveredProspectID: ProspectID?
     @State private var presentedListMenuID: ProspectID?
     @State private var enrichingProspectID: ProspectID?
+    @State private var findingPersonnelPageID: ProspectID?
     @State private var prospectForNewList: ProspectID?
 
     init(searchResults: [ProspectRecord], keywords: [String] = [], locations: [String] = [], lists: Binding<[ProspectList]> = .constant([]), title: String = "Prospects", allowsCrawling: Bool = true) {
@@ -1301,7 +1303,7 @@ struct ProspectsView: View {
 
                 if allowsCrawling {
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text(remainingCredits.map { "Firecrawl credits: \($0)" } ?? "Firecrawl credits: —")
+                        Text(remainingCredits.map { "Website lookups left: \($0)" } ?? "Website lookups left: —")
                             .font(.callout.monospacedDigit())
                         if let creditMessage {
                             Text(creditMessage).font(.caption).foregroundStyle(.secondary)
@@ -1315,18 +1317,18 @@ struct ProspectsView: View {
                 }
                 .disabled(searchResults.isEmpty || exportState.isBusy)
 
-                Button(isFindingPersonnelPages ? "Finding Personnel Pages…" : "Find Personnel Page", systemImage: "person.crop.rectangle.stack") {
+                Button(isFindingPersonnelPages ? "Finding Team Pages…" : "Find Team Pages", systemImage: "person.crop.rectangle.stack") {
                     Task { await findPersonnelPages(force: true) }
                 }
                 .disabled(searchResults.isEmpty || isFindingPersonnelPages)
-                .help("Checks header, footer, and nav links with Swift HTTP and asks the local model to choose a personnel page. This does not use Firecrawl credits.")
+                .help("Looks at each company website for a team or staff page. This does not use lookup credits.")
 
                 if allowsCrawling {
-                    Button("Crawl All Pages", systemImage: "person.text.rectangle") {
+                    Button("Look Up All People", systemImage: "person.text.rectangle") {
                         confirmingCrawlAll = true
                     }
                     .disabled(searchResults.isEmpty || isEnriching || KeychainHelper.getKey().isEmpty)
-                    .help(KeychainHelper.getKey().isEmpty ? "Add a Firecrawl API key in Settings." : "Crawls the best personnel page found for every prospect.")
+                    .help(KeychainHelper.getKey().isEmpty ? "Add a Firecrawl API key in Settings." : "Looks up people on the best team page for every business.")
                 }
             }
 
@@ -1346,7 +1348,7 @@ struct ProspectsView: View {
 
             if isEnriching {
                 ProgressView(value: enrichmentProgress, total: 1) {
-                    Text("Web crawl and personnel extraction in progress…")
+                    Text("Looking up people on company websites…")
                 } currentValueLabel: {
                     Text("\(Int(enrichmentProgress * 100))%")
                         .monospacedDigit()
@@ -1356,7 +1358,7 @@ struct ProspectsView: View {
                     .accessibilityIdentifier("prospects.enrichment-progress")
             } else if isFindingPersonnelPages {
                 ProgressView(value: Double(checkedPersonnelPageCount), total: Double(max(searchResults.count, 1))) {
-                    Text("Finding personnel pages \(checkedPersonnelPageCount) of \(searchResults.count)")
+                    Text("Finding team pages \(checkedPersonnelPageCount) of \(searchResults.count)")
                 }
                 .progressViewStyle(.linear)
                 .accessibilityIdentifier("prospects.personnel-page-progress")
@@ -1366,7 +1368,7 @@ struct ProspectsView: View {
                 ContentUnavailableView(
                     "No Prospects",
                     systemImage: "person.2",
-                    description: Text("Run a search to populate this workspace.")
+                    description: Text("Run a search to see businesses here.")
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -1374,7 +1376,7 @@ struct ProspectsView: View {
             }
 
             if let receipt = selectedProspectID.flatMap({ enrichmentReceipts[$0] }), let selectedURL = receipt.selectedURL, !receipt.personnel.people.isEmpty {
-                GroupBox("Personnel from \(selectedURL.host() ?? selectedURL.absoluteString)") {
+                GroupBox("People from \(selectedURL.host() ?? selectedURL.absoluteString)") {
                     Table(receipt.personnel.people) {
                         TableColumn("Name") { Text($0.name ?? "—") }
                         TableColumn("Title") { Text($0.title ?? "—") }
@@ -1387,23 +1389,23 @@ struct ProspectsView: View {
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .accessibilityIdentifier("detail.prospects")
-        .alert("Submit one page to Firecrawl?", isPresented: Binding(
+        .alert("Look up people on this website?", isPresented: Binding(
             get: { pendingProspect != nil },
             set: { if !$0 { pendingProspect = nil } }
         ), presenting: pendingProspect) { prospect in
             Button("Cancel", role: .cancel) { pendingProspect = nil }
-            Button("Extract One Page") {
+            Button("Look Up People") {
                 pendingProspect = nil
                 Task { await enrich(prospect) }
             }
         } message: { prospect in
-            Text("Gemma will choose one personnel page for \(prospect.name). Only that page will be submitted, but Firecrawl's AI extraction may consume multiple usage-based credits.")
+            Text("We’ll find a team or staff page for \(prospect.name) and look up the people listed there. This may use some of your website lookup credits.")
         }
-        .confirmationDialog("Crawl all prospect pages?", isPresented: $confirmingCrawlAll) {
-            Button("Crawl \(searchResults.count) Pages") { Task { await enrichAll() } }
+        .confirmationDialog("Look up people for every business?", isPresented: $confirmingCrawlAll) {
+            Button("Look Up \(searchResults.count) Businesses") { Task { await enrichAll() } }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("FireProspect will discover and crawl one personnel page for each result. Firecrawl charges are usage-based.")
+            Text("We’ll look up people for each result. This may use website lookup credits.")
         }
         .task {
             if allowsCrawling { await refreshCredits() }
@@ -1537,7 +1539,7 @@ struct ProspectsView: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .help(url.absoluteString)
-                        .accessibilityLabel("Open personnel page for \(row.prospect.name)")
+                        .accessibilityLabel("Open team page for \(row.prospect.name)")
                 } else {
                     Text("—").foregroundStyle(.secondary)
                 }
@@ -1613,15 +1615,39 @@ struct ProspectsView: View {
 
     @ViewBuilder
     private func personnelPageCell(for row: NumberedProspectRow, width: CGFloat) -> some View {
-        if let url = enrichmentReceipts[row.id]?.selectedURL {
-            Link("Found", destination: url)
-                .lineLimit(1)
-                .help(url.absoluteString)
-                .frame(width: width, alignment: .leading)
-                .accessibilityLabel("Open found personnel page for \(row.prospect.name)")
-        } else {
-            detailCell(personnelPageStatus(for: row.id), width: width)
+        Group {
+            if isPersonnelPageInProgress(for: row.id) {
+                Button("Finding…") {}
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(true)
+            } else if let url = enrichmentReceipts[row.id]?.selectedURL {
+                Link("Found", destination: url)
+                    .help(url.absoluteString)
+                    .accessibilityLabel("Open team page for \(row.prospect.name)")
+            } else if checkedPersonnelPageIDs.contains(row.id) {
+                Text("Not found")
+                    .foregroundStyle(.red)
+                    .accessibilityLabel("Team page not found for \(row.prospect.name)")
+            } else {
+                Button("Find Page") {
+                    if let prospect = searchResults.first(where: { $0.id == row.id }) {
+                        Task { await findPersonnelPage(for: prospect) }
+                    }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(isFindingPersonnelPages)
+                .help("Looks at the company website for a team or staff page. This does not use lookup credits.")
+                .accessibilityLabel("Find team page for \(row.prospect.name)")
+            }
         }
+        .frame(width: width, alignment: .leading)
+    }
+
+    private func isPersonnelPageInProgress(for id: ProspectID) -> Bool {
+        if findingPersonnelPageID == id { return true }
+        return isFindingPersonnelPages && findingPersonnelPageID == nil && !checkedPersonnelPageIDs.contains(id)
     }
 
     private var selectedProspect: ProspectRecord? {
@@ -1634,9 +1660,27 @@ struct ProspectsView: View {
         return emails.isEmpty ? "—" : Array(Set(emails)).sorted().joined(separator: ", ")
     }
 
-    private func personnelPageStatus(for id: ProspectID) -> String {
-        if enrichmentReceipts[id]?.selectedURL != nil { return "Found" }
-        return checkedPersonnelPageIDs.contains(id) ? "Not found" : (isFindingPersonnelPages ? "Checking…" : "Not checked")
+    @MainActor
+    private func findPersonnelPage(for prospect: ProspectRecord) async {
+        guard !isFindingPersonnelPages else { return }
+        isFindingPersonnelPages = true
+        findingPersonnelPageID = prospect.id
+        checkedPersonnelPageCount = 0
+        enrichmentMessage = "Looking for a team or staff page for \(prospect.name)…"
+
+        let receipt = try? await SiteEnrichmentService.shared.findPersonnelPage(website: prospect.websiteURL)
+        if let receipt {
+            enrichmentReceipts[prospect.id] = receipt
+        }
+        checkedPersonnelPageIDs.insert(prospect.id)
+        checkedPersonnelPageCount = 1
+
+        isFindingPersonnelPages = false
+        findingPersonnelPageID = nil
+        let found = receipt?.selectedURL != nil
+        enrichmentMessage = found
+            ? "Found a team page for \(prospect.name)."
+            : "Couldn’t find a team page for \(prospect.name)."
     }
 
     @MainActor
@@ -1650,7 +1694,7 @@ struct ProspectsView: View {
         }
         isFindingPersonnelPages = true
         checkedPersonnelPageCount = 0
-        enrichmentMessage = "FREE DISCOVERY // Finding personnel pages from header, footer, and nav links with HTTP GET + local model; no Firecrawl credits are used…"
+        enrichmentMessage = "Looking for team or staff pages. This does not use lookup credits…"
 
         await withTaskGroup(of: (ProspectRecord, EnrichmentReceipt?).self) { group in
             for prospect in prospectsToCheck {
@@ -1670,7 +1714,7 @@ struct ProspectsView: View {
 
         isFindingPersonnelPages = false
         let found = enrichmentReceipts.values.filter { $0.selectedURL != nil }.count
-        enrichmentMessage = "FREE DISCOVERY // Personnel page search complete: \(found) of \(searchResults.count) found; 0 Firecrawl credits used."
+        enrichmentMessage = "Finished checking team pages. Found \(found) of \(searchResults.count)."
     }
 
     @MainActor
@@ -1678,7 +1722,7 @@ struct ProspectsView: View {
         let key = KeychainHelper.getKey()
         guard !key.isEmpty else {
             remainingCredits = nil
-            creditMessage = "API key not configured"
+            creditMessage = "Add an API key in Settings"
             return
         }
         do {
@@ -1686,7 +1730,7 @@ struct ProspectsView: View {
             creditMessage = nil
         } catch {
             remainingCredits = nil
-            creditMessage = "Balance unavailable"
+            creditMessage = "Lookup balance unavailable"
         }
     }
 
@@ -1703,7 +1747,7 @@ struct ProspectsView: View {
                 enrichmentProgress = min(enrichmentProgress + 0.015, 0.95)
             }
         }
-        enrichmentMessage = "FREE DISCOVERY // Inspecting homepage header, navigation, and footer links…"
+        enrichmentMessage = "Looking at the website for a team or staff page…"
         do {
             let receipt = try await SiteEnrichmentService.shared.enrichOnePage(
                 website: prospect.websiteURL,
@@ -1711,15 +1755,15 @@ struct ProspectsView: View {
             )
             let enhancementStatus: String
             switch receipt.aiEnhancement {
-            case .completed: enhancementStatus = "COMPLETE // Exactly 1 page submitted; credits are usage-based"
-            case .skipped(let reason): enhancementStatus = "NONFATAL // AI personnel enhancements skipped: \(reason.unavailableDescription)"
+            case .completed: enhancementStatus = "Looked up people from one page. Credits depend on the lookup."
+            case .skipped(let reason): enhancementStatus = "Couldn’t use on-device AI for this lookup. \(reason.unavailableDescription)"
             }
+            let peopleCount = receipt.personnel.people.count
             enrichmentMessage = """
             \(enhancementStatus)
-            NAVIGATION // \(receipt.discovery.links.count) homepage candidate link(s)
-            DISCOVERY // Header, nav, and footer via native Swift HTTP
-            SELECTED // \(receipt.selectedURL?.absoluteString ?? "Skipped")
-            PEOPLE // \(receipt.personnel.people.count)
+            Website links checked: \(receipt.discovery.links.count)
+            Page used: \(receipt.selectedURL?.absoluteString ?? "None")
+            People found: \(peopleCount)
             """
             enrichmentReceipts[prospect.id] = receipt
             await refreshCredits()
@@ -1732,7 +1776,7 @@ struct ProspectsView: View {
                 outcome: enhancementStatus
             ))
         } catch {
-            enrichmentMessage = "NONFATAL FAILURE // \(error.localizedDescription)"
+            enrichmentMessage = "Couldn’t look up people. \(error.localizedDescription)"
             await refreshCredits()
             try? FirecrawlActivityStore.append(FirecrawlActivity(
                 website: prospect.websiteURL,
@@ -1755,10 +1799,10 @@ struct ProspectsView: View {
         guard !searchResults.isEmpty else { return }
         let total = searchResults.count
         for (index, prospect) in searchResults.enumerated() {
-            enrichmentMessage = "CRAWL ALL // \(index + 1) of \(total): \(prospect.name)"
+            enrichmentMessage = "Looking up people for \(prospect.name) (\(index + 1) of \(total))"
             await enrich(prospect)
         }
-        enrichmentMessage = "CRAWL ALL COMPLETE // Processed \(total) prospect page\(total == 1 ? "" : "s")."
+        enrichmentMessage = "Finished looking up people for \(total) business\(total == 1 ? "" : "es")."
     }
 
     @MainActor
@@ -1907,7 +1951,7 @@ struct SettingsTabView: View {
                     Label("Firecrawl", systemImage: "key")
                         .font(.title3.weight(.semibold))
                     
-                    Text("Required credential for automated site crawling and structured domain parsing.")
+                    Text("Connect Firecrawl to look up people listed on company websites.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
@@ -1937,15 +1981,15 @@ struct SettingsTabView: View {
                     Button(action: {
                         let normalizedKey = firecrawlKey.trimmingCharacters(in: .whitespacesAndNewlines)
                         guard !normalizedKey.isEmpty else {
-                            firecrawlMessage = "Enter a Firecrawl API key before saving."
+                            firecrawlMessage = "Enter your Firecrawl API key to save it."
                             return
                         }
                         if KeychainHelper.saveKey(normalizedKey), KeychainHelper.getKey() == normalizedKey {
                             firecrawlKey = normalizedKey
-                            firecrawlMessage = "Configured — credential stored in Keychain."
+                            firecrawlMessage = "Saved. Your key is stored securely on this Mac."
                             NotificationCenter.default.post(name: .firecrawlConfigurationChanged, object: nil)
                         } else {
-                            firecrawlMessage = "The API key could not be saved to Keychain. Please try again."
+                            firecrawlMessage = "The key could not be saved. Please try again."
                         }
                     }) {
                         Text("Save API Key")
@@ -1955,7 +1999,7 @@ struct SettingsTabView: View {
                     Button("Remove", role: .destructive) {
                         _ = KeychainHelper.deleteKey()
                         firecrawlKey = ""
-                        firecrawlMessage = "Credential removed."
+                        firecrawlMessage = "Key removed."
                         NotificationCenter.default.post(name: .firecrawlConfigurationChanged, object: nil)
                     }
                     .disabled(firecrawlKey.isEmpty)
@@ -1979,17 +2023,16 @@ struct SettingsTabView: View {
                 Label(localModelAvailability.label, systemImage: localModelAvailability == .ready ? "checkmark.circle.fill" : "cpu")
                     .foregroundStyle(localModelAvailability == .ready ? Color.green : Color.secondary)
                     .accessibilityIdentifier("settings.local-model-status")
-                Text("Native MLX setup downloads the public Gemma checkpoint from Hugging Face and runs it privately on Apple Silicon. No account or access token is required.")
+                Text("Install a small model on this Mac to suggest related search terms. It stays private and does not need an account.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(LocalModelService.manifest.displayName).font(.headline)
-                    Text(LocalModelService.manifest.repositoryID).font(.caption.monospaced()).textSelection(.enabled)
                     Text(LocalModelService.manifest.detail).font(.caption).foregroundStyle(.secondary)
                 }
                 HStack {
                     Button("Check Again") { Task { await refreshLocalModel() } }
-                    Button("Install Gemma 3 1B") { showingModelSetup = true }
+                    Button("Install on-device AI") { showingModelSetup = true }
                         .buttonStyle(.borderedProminent)
                         .disabled(localModelAvailability == .ready || isInstallingModel)
                         .accessibilityIdentifier("settings.install-local-model")
@@ -2011,7 +2054,7 @@ struct SettingsTabView: View {
         .accessibilityIdentifier("detail.settings")
         .onAppear {
             firecrawlKey = KeychainHelper.getKey()
-            firecrawlMessage = firecrawlKey.isEmpty ? "Not configured. Enter the Firecrawl API key in Keychain." : "Configured securely in Keychain."
+            firecrawlMessage = firecrawlKey.isEmpty ? "Add your Firecrawl API key to look up people on company websites." : "Your key is saved securely on this Mac."
             Task { await refreshLocalModel() }
         }
         .sheet(isPresented: $showingModelSetup) {

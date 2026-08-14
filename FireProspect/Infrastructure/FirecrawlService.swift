@@ -61,10 +61,10 @@ enum FirecrawlError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .missingAPIKey: "Firecrawl API key is missing. Add it in Settings."
-        case .invalidResponse(let status): "Firecrawl returned HTTP \(status)."
-        case .requestFailed(let message): "Firecrawl request failed: \(message)"
-        case .extractionTimedOut: "Firecrawl extraction did not finish in time."
+        case .missingAPIKey: "Add a Firecrawl API key in Settings to look up people."
+        case .invalidResponse(let status): "The website lookup service returned an error (\(status))."
+        case .requestFailed(let message): "The website lookup failed: \(message)"
+        case .extractionTimedOut: "Looking up people took too long. Try again."
         }
     }
 }
