@@ -290,6 +290,37 @@ final class FireProspectTests: XCTestCase {
         XCTAssertEqual(tree.first { $0.name == "about" }?.url, about)
     }
 
+    func testPageTextChunksWalkTheWholePageIncludingNames() {
+        let prefix = String(repeating: "Intro ", count: 80)
+        let name = "Jane Marie Doe, Principal Surveyor, jane.doe@wgkengineers.com 601-555-0100"
+        let suffix = String(repeating: "Outro ", count: 80)
+        let chunks = LocalModelService.pageTextChunks(prefix + name + suffix, chunkCharacters: 200, overlap: 40)
+        XCTAssertGreaterThan(chunks.count, 1)
+        XCTAssertTrue(chunks.contains { $0.contains("Jane Marie Doe") && $0.contains("jane.doe@wgkengineers.com") })
+        XCTAssertTrue(chunks.first?.contains("Intro") == true)
+        XCTAssertTrue(chunks.last?.contains("Outro") == true)
+    }
+
+    func testVisiblePageTextKeepsNamesFromHTMLParagraphs() {
+        let html = "<html><script>ignore()</script><p>Jane Marie Doe jane.doe@wgkengineers.com</p></html>"
+        let text = LocalModelService.visiblePageText(html)
+        XCTAssertTrue(text.contains("Jane Marie Doe"))
+        XCTAssertTrue(text.contains("jane.doe@wgkengineers.com"))
+        XCTAssertFalse(text.contains("ignore()"))
+        XCTAssertFalse(text.contains("<p>"))
+    }
+
+    func testPersonnelJSONPairsNameWithEmailFromModelOutput() {
+        let json = """
+        Result: {"people":[{"name":"Jane Marie Doe","title":"Principal Surveyor","email":"jane.doe@wgkengineers.com","phone":"601-555-0100"}]}
+        """
+        let people = LocalModelService.decodePersonnelExtraction(json)?.people
+        XCTAssertEqual(people?.first?.name, "Jane Marie Doe")
+        XCTAssertEqual(people?.first?.email, "jane.doe@wgkengineers.com")
+        XCTAssertEqual(people?.first?.title, "Principal Surveyor")
+        XCTAssertEqual(people?.first?.phone, "601-555-0100")
+    }
+
     func testLocalModelExtractsJSONFromChatOutput() {
         XCTAssertEqual(
             LocalModelService.extractJSONObject(from: "Here is the result:\n{\"ready\":true}\nDone"),
@@ -640,6 +671,9 @@ private actor ModelStub: LocalModelServing {
         return .unavailable(reportedCapability)
     }
     func decideDeeperLookupIfAvailable(teamPage: URL, childPages: [URL], hasDomainContacts: Bool) -> LocalModelResult<DeeperLookupDecision> {
+        .unavailable(reportedCapability)
+    }
+    func extractPersonnelIfAvailable(fromPageText text: String) -> LocalModelResult<PersonnelExtraction> {
         .unavailable(reportedCapability)
     }
 }

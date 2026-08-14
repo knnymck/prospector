@@ -1956,7 +1956,7 @@ struct ProspectsView: View {
             )
             let enhancementStatus: String
             switch receipt.aiEnhancement {
-            case .completed: enhancementStatus = "Looked up people from the team page and any individual profile pages."
+            case .completed: enhancementStatus = "Read the team page and matched names to emails and phone numbers."
             case .skipped(let reason): enhancementStatus = "Couldn’t use on-device AI for this lookup. \(reason.unavailableDescription)"
             }
             let peopleCount = receipt.personnel.people.count
