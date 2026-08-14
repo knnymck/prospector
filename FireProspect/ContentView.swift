@@ -305,7 +305,7 @@ struct HomeView: View {
                         Text(modelAvailability.label)
                             .font(.callout).foregroundStyle(.secondary)
                         if modelAvailability != .ready {
-                            Button("Set Up Gemma 4 2B") {
+                            Button("Install Gemma 4 2B") {
                                 Task { await setUpLocalModel() }
                             }
                             .buttonStyle(.borderedProminent)
@@ -378,6 +378,10 @@ struct HomeView: View {
         modelAvailability = .installing(nil)
         modelSetupMessage = nil
         do {
+            if await LocalModelService.shared.availability() == .runtimeUnavailable {
+                modelSetupMessage = LocalModelSetupLauncher.launchRuntimeOrInstaller()
+                try await LocalModelService.shared.waitForRuntime()
+            }
             try await LocalModelService.shared.ensureInstalled { progress in
                 await MainActor.run { self.modelAvailability = .installing(progress) }
             }
@@ -447,6 +451,14 @@ struct SearchTabView: View {
 
     private var filteredCities: [City] {
         citySuggestions.filter { !selectedCityIDs.contains($0.id) }
+    }
+
+    private var shouldShowStateSuggestions: Bool {
+        isStateDropdownFocused && !stateSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var shouldShowCitySuggestions: Bool {
+        isCityDropdownFocused && !citySearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var searchScope: SearchScope {
@@ -525,7 +537,10 @@ struct SearchTabView: View {
                 .font(.body)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
-                .background(Color.accentColor.opacity(isStateDropdownFocused ? 0.08 : (isStateInputHovered ? 0.04 : 0)))
+                .background(
+                    Color(nsColor: .textBackgroundColor)
+                        .overlay(Color.accentColor.opacity(isStateDropdownFocused ? 0.08 : (isStateInputHovered ? 0.04 : 0)))
+                )
                 .overlay(
                     RoundedRectangle(cornerRadius: 4)
                         .strokeBorder(isStateDropdownFocused ? Color.accentColor : Color.primary.opacity(isStateInputHovered ? 0.3 : 0.15), lineWidth: isStateDropdownFocused ? 2 : 1)
@@ -537,7 +552,7 @@ struct SearchTabView: View {
                     if let first = filteredStateSuggestions.first { addState(first.id) }
                 }
                 
-                if isStateDropdownFocused || !stateSearch.isEmpty {
+                if shouldShowStateSuggestions {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 2) {
                             ForEach(filteredStateSuggestions) { state in
@@ -594,7 +609,10 @@ struct SearchTabView: View {
                 .font(.body)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
-                .background(Color.accentColor.opacity(isCityDropdownFocused ? 0.08 : (isCityInputHovered ? 0.04 : 0)))
+                .background(
+                    Color(nsColor: .textBackgroundColor)
+                        .overlay(Color.accentColor.opacity(isCityDropdownFocused ? 0.08 : (isCityInputHovered ? 0.04 : 0)))
+                )
                 .overlay(
                     RoundedRectangle(cornerRadius: 4)
                         .strokeBorder(isCityDropdownFocused ? Color.accentColor : Color.primary.opacity(isCityInputHovered ? 0.3 : 0.15), lineWidth: isCityDropdownFocused ? 2 : 1)
@@ -609,37 +627,31 @@ struct SearchTabView: View {
                 }
             
             // Filtered City List
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 1) {
-                    if selectedStates.isEmpty {
-                        Text("No state selected. Select a state to populate cities.")
-                            .font(.system(size: 10, design: .default))
-                            .italic()
-                            .foregroundStyle(.tertiary)
-                            .padding(8)
-                    } else if filteredCities.isEmpty {
-                        Text("No cities matching filter.")
-                            .font(.system(size: 10, design: .default))
-                            .italic()
-                            .foregroundStyle(.tertiary)
-                            .padding(8)
-                    } else {
-                        ForEach(filteredCities) { city in
-                            PickerSuggestionRow(label: city.displayName, systemImage: "plus.circle") {
-                                addCityToSelection(city)
+            if shouldShowCitySuggestions {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 1) {
+                        if filteredCities.isEmpty {
+                            Text("No cities matching filter.")
+                                .font(.system(size: 10, design: .default))
+                                .italic()
+                                .foregroundStyle(.tertiary)
+                                .padding(8)
+                        } else {
+                            ForEach(filteredCities) { city in
+                                PickerSuggestionRow(label: city.displayName, systemImage: "plus.circle") {
+                                    addCityToSelection(city)
+                                }
                             }
                         }
                     }
                 }
+                .frame(height: 160)
+                .background(Color(nsColor: .controlBackgroundColor))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+                )
             }
-            .frame(height: 160)
-            .background(Color(nsColor: .controlBackgroundColor))
-            .overlay(
-                RoundedRectangle(cornerRadius: 4)
-                    .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
-            )
-            .disabled(selectAllCities || selectedStates.isEmpty)
-            .opacity((selectAllCities || selectedStates.isEmpty) ? 0.4 : 1.0)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -822,11 +834,13 @@ struct SearchTabView: View {
         selectedCityIDs.insert(city.id)
         selectedCityRecords[city.id] = city
         citySearch = ""
+        isCityDropdownFocused = false
     }
 
     private func addState(_ stateID: StateID) {
         selectedStates.insert(stateID)
         stateSearch = ""
+        isStateDropdownFocused = false
     }
 
     private func removeCity(_ cityID: CityID) {
@@ -1474,6 +1488,7 @@ struct RemovablePill: View {
 
 struct SettingsTabView: View {
     @State private var firecrawlKey: String = ""
+    @State private var isFirecrawlKeyVisible = false
     @State private var firecrawlMessage: String = ""
     @State private var localModelMessage: String = ""
     @State private var modelIdentifier = LocalModelService.configuredModel
@@ -1491,8 +1506,26 @@ struct SettingsTabView: View {
                         .foregroundStyle(.secondary)
                 }
                 
-                SecureField("API key", text: $firecrawlKey)
+                HStack(spacing: 8) {
+                    Group {
+                        if isFirecrawlKeyVisible {
+                            TextField("API key", text: $firecrawlKey)
+                        } else {
+                            SecureField("API key", text: $firecrawlKey)
+                        }
+                    }
                     .textFieldStyle(.roundedBorder)
+
+                    Button {
+                        isFirecrawlKeyVisible.toggle()
+                    } label: {
+                        Image(systemName: isFirecrawlKeyVisible ? "eye.slash" : "eye")
+                    }
+                    .buttonStyle(.borderless)
+                    .help(isFirecrawlKeyVisible ? "Hide API key" : "Show API key")
+                    .accessibilityLabel(isFirecrawlKeyVisible ? "Hide API key" : "Show API key")
+                    .accessibilityIdentifier("settings.firecrawl-key-visibility")
+                }
                 
                 HStack(spacing: 16) {
                     Button(action: {
@@ -1528,22 +1561,19 @@ struct SettingsTabView: View {
                 Label(localModelAvailability.label, systemImage: localModelAvailability == .ready ? "checkmark.circle.fill" : "cpu")
                     .foregroundStyle(localModelAvailability == .ready ? Color.green : Color.secondary)
                     .accessibilityIdentifier("settings.local-model-status")
-                Text("Keyword generation requires Gemma 4 2B through the local Ollama runtime. Model installation is optional; searches safely fall back to the original category.")
+                Text("One-click setup launches Ollama or opens its official installer, then downloads Gemma 4 2B automatically. Keep FireProspect open while setup completes.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                 TextField("Ollama model tag", text: $modelIdentifier)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit { saveModelIdentifier() }
-                if localModelAvailability == .runtimeUnavailable {
-                    Text("Install and launch Ollama on this Mac, then choose Check Again. FireProspect cannot install the Ollama application itself.")
-                        .font(.callout).foregroundStyle(.orange)
-                }
                 HStack {
                     Button("Check Again") { Task { await refreshLocalModel() } }
                     Button("Save Model Tag") { saveModelIdentifier() }
-                    Button("Install Model") { Task { await installLocalModel() } }
+                    Button("Install Gemma 4 2B") { Task { await installLocalModel() } }
                         .buttonStyle(.borderedProminent)
-                        .disabled(localModelAvailability == .ready || localModelAvailability == .runtimeUnavailable || isInstallingModel)
+                        .disabled(localModelAvailability == .ready || isInstallingModel)
+                        .accessibilityIdentifier("settings.install-local-model")
                 }
                 if !localModelMessage.isEmpty {
                     Text(localModelMessage).font(.callout).foregroundStyle(.secondary)
@@ -1587,15 +1617,45 @@ struct SettingsTabView: View {
     @MainActor
     private func installLocalModel() async {
         localModelAvailability = .installing(nil)
+        localModelMessage = "Checking required local components…"
         do {
+            if await LocalModelService.shared.availability() == .runtimeUnavailable {
+                localModelMessage = LocalModelSetupLauncher.launchRuntimeOrInstaller()
+                try await LocalModelService.shared.waitForRuntime()
+            }
+            localModelMessage = "Ollama is ready. Downloading Gemma 4 2B…"
             try await LocalModelService.shared.ensureInstalled { progress in
                 await MainActor.run { self.localModelAvailability = .installing(progress) }
             }
             localModelAvailability = .ready
+            localModelMessage = "Gemma 4 2B and its required runtime are installed and ready."
         } catch {
             localModelAvailability = await LocalModelService.shared.availability()
             localModelMessage = error.localizedDescription
         }
+    }
+}
+
+@MainActor
+private enum LocalModelSetupLauncher {
+    private static let ollamaDownloadURL = URL(string: "https://ollama.com/download/mac")!
+
+    /// Starts an existing Ollama installation or opens its official macOS installer.
+    /// macOS still asks the user to approve installation of the separate runtime.
+    static func launchRuntimeOrInstaller() -> String {
+        let candidates = [
+            URL(fileURLWithPath: "/Applications/Ollama.app"),
+            FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Applications/Ollama.app")
+        ]
+
+        if let application = candidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }) {
+            NSWorkspace.shared.open(application)
+            return "Launching Ollama. Gemma 4 2B will download automatically when the runtime is ready…"
+        }
+
+        NSWorkspace.shared.open(ollamaDownloadURL)
+        return "The official Ollama installer is open. Install and launch Ollama; Gemma 4 2B will then download automatically."
     }
 }
 
