@@ -50,4 +50,5 @@ extension Notification.Name {
     static let showHomeDestination = Notification.Name("showHomeDestination")
     static let showSearchDestination = Notification.Name("showSearchDestination")
     static let showSearchesDestination = Notification.Name("showSearchesDestination")
+    static let firecrawlConfigurationChanged = Notification.Name("firecrawlConfigurationChanged")
 }

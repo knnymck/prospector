@@ -53,15 +53,20 @@ struct ContentView: View {
     @State private var selectedDestination: SidebarDestination? = .home
     @State private var searchResults: [ProspectRecord] = []
     @State private var searchHistory = SearchHistoryStore.load()
+    @State private var recentSearches = RecentSearchStore.load(fallback: SearchHistoryStore.load())
+    @State private var prospectLists = ProspectListStore.load()
     @State private var currentKeywords: [String] = []
     @State private var currentLocations: [String] = []
     @State private var isSearchesExpanded = true
+    @State private var isListsExpanded = true
+    @State private var showingNewList = false
     @State private var expandedSearchDays: Set<Date> = []
 
     enum SidebarDestination: Hashable, Identifiable {
         case home
         case search
         case searches
+        case prospectList(UUID)
         case logs
         case settings
         case history(UUID)
@@ -73,6 +78,7 @@ struct ContentView: View {
             case .home: "home"
             case .search: "search"
             case .searches: "searches"
+            case .prospectList(let id): "list.\(id.uuidString)"
             case .logs: "logs"
             case .settings: "settings"
             case .history(let id): "history.\(id.uuidString)"
@@ -87,6 +93,8 @@ struct ContentView: View {
                 "New Search"
             case .searches:
                 "Searches"
+            case .prospectList(let id):
+                id.uuidString
             case .logs:
                 "Logs"
             case .settings:
@@ -104,6 +112,8 @@ struct ContentView: View {
                 "magnifyingglass"
             case .searches:
                 "clock.arrow.circlepath"
+            case .prospectList:
+                "list.bullet.rectangle"
             case .logs:
                 "doc.text.magnifyingglass"
             case .settings:
@@ -127,9 +137,16 @@ struct ContentView: View {
 
     private var latestHistory: SearchHistoryEntry? { searchHistory.first }
 
+    private var selectedList: ProspectList? {
+        guard case .prospectList(let id)? = selectedDestination else { return nil }
+        return prospectLists.first { $0.id == id }
+    }
+
     private func recordSearch(_ results: [ProspectRecord], keywords: [String], locations: [String]) {
         let entry = SearchHistoryEntry(results: results, keywords: keywords, locations: locations)
         searchHistory.insert(entry, at: 0)
+        recentSearches.insert(entry, at: 0)
+        try? RecentSearchStore.save(recentSearches)
         try? SearchHistoryStore.save(searchHistory)
         searchResults = results
         currentKeywords = keywords
@@ -139,14 +156,15 @@ struct ContentView: View {
         expandedSearchDays.insert(Calendar.current.startOfDay(for: entry.searchedAt))
     }
 
-    private func clearSearchHistory() {
-        searchHistory = []
-        searchResults = []
-        currentKeywords = []
-        currentLocations = []
-        expandedSearchDays = []
-        try? SearchHistoryStore.save([])
-        if case .some(.history) = selectedDestination { selectedDestination = .home }
+    private func clearRecentSearches() {
+        recentSearches = []
+        try? RecentSearchStore.save([])
+    }
+
+    private func deleteList(_ id: UUID) {
+        prospectLists.removeAll { $0.id == id }
+        try? ProspectListStore.save(prospectLists)
+        if selectedDestination == .prospectList(id) { selectedDestination = .home }
     }
 
     @ViewBuilder
@@ -164,6 +182,34 @@ struct ContentView: View {
                     Section {
                         destinationRow(.home)
                         destinationRow(.search)
+                        DisclosureGroup(isExpanded: $isListsExpanded) {
+                            if prospectLists.isEmpty {
+                                Text("No lists")
+                                    .foregroundStyle(.secondary)
+                                    .accessibilityIdentifier("sidebar.lists.empty")
+                            } else {
+                                ForEach(prospectLists) { list in
+                                    Label(list.name, systemImage: "building.2")
+                                        .tag(SidebarDestination.prospectList(list.id))
+                                        .accessibilityIdentifier("sidebar.list.\(list.id.uuidString)")
+                                        .contextMenu {
+                                            Button("Delete List", role: .destructive) { deleteList(list.id) }
+                                        }
+                                }
+                            }
+                        } label: {
+                            HStack {
+                                Label("Lists", systemImage: "list.bullet.rectangle")
+                                Spacer()
+                                Button { showingNewList = true } label: {
+                                    Image(systemName: "plus")
+                                }
+                                .buttonStyle(.borderless)
+                                .help("Create a new list")
+                                .accessibilityLabel("Create a new list")
+                                .accessibilityIdentifier("sidebar.lists.create")
+                            }
+                        }
                         DisclosureGroup(isExpanded: $isSearchesExpanded) {
                             if searchHistory.isEmpty {
                                 Text("No search history")
@@ -226,12 +272,12 @@ struct ContentView: View {
             Group {
                 switch selectedDestination ?? .home {
                 case .home:
-                    HomeView(searchHistory: searchHistory) { entry in
+                    HomeView(searchHistory: recentSearches) { entry in
                         selectedDestination = .history(entry.id)
                     } openSettings: {
                         selectedDestination = .settings
-                    } clearSearchHistory: {
-                        clearSearchHistory()
+                    } clearRecentSearches: {
+                        clearRecentSearches()
                     }
                 case .search:
                     SearchTabView(searchResults: $searchResults, onSearchCompleted: recordSearch)
@@ -239,7 +285,15 @@ struct ContentView: View {
                     ProspectsView(
                         searchResults: latestHistory?.results ?? searchResults,
                         keywords: latestHistory?.keywords ?? currentKeywords,
-                        locations: latestHistory?.locations ?? currentLocations
+                        locations: latestHistory?.locations ?? currentLocations,
+                        lists: $prospectLists
+                    )
+                case .prospectList:
+                    ProspectsView(
+                        searchResults: selectedList?.prospects ?? [],
+                        lists: $prospectLists,
+                        title: selectedList?.name ?? "List",
+                        allowsCrawling: false
                     )
                 case .logs:
                     FirecrawlLogsView()
@@ -249,13 +303,20 @@ struct ContentView: View {
                     ProspectsView(
                         searchResults: selectedHistory?.results ?? [],
                         keywords: selectedHistory?.keywords ?? [],
-                        locations: selectedHistory?.locations ?? []
+                        locations: selectedHistory?.locations ?? [],
+                        lists: $prospectLists
                     )
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(AppBackground())
-            .navigationTitle(selectedHistory?.title ?? (selectedDestination ?? .home).title)
+            .navigationTitle(selectedHistory?.title ?? selectedList?.name ?? (selectedDestination ?? .home).title)
+        }
+        .sheet(isPresented: $showingNewList) {
+            NewListSheet(lists: $prospectLists) { list in
+                selectedDestination = .prospectList(list.id)
+                isListsExpanded = true
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .showHomeDestination)) { _ in
             selectedDestination = .home
@@ -285,9 +346,10 @@ struct HomeView: View {
     let searchHistory: [SearchHistoryEntry]
     let openSearch: (SearchHistoryEntry) -> Void
     let openSettings: () -> Void
-    let clearSearchHistory: () -> Void
+    let clearRecentSearches: () -> Void
     @State private var remainingCredits: Int?
     @State private var creditStatus = "Checking monthly usage…"
+    @State private var isFirecrawlConnected = false
     @State private var modelAvailability: LocalModelAvailability = .checking
     @State private var modelSetupMessage: String?
     @State private var showingModelSetup = false
@@ -305,7 +367,7 @@ struct HomeView: View {
 
                 HStack(alignment: .top, spacing: 16) {
                     statusCard(title: "Firecrawl", image: "flame.fill") {
-                        if KeychainHelper.getKey().isEmpty {
+                        if !isFirecrawlConnected {
                             Text("Firecrawl not connected").font(.headline)
                             Text("Connect an API key to view this month's remaining crawl credits.")
                                 .font(.callout).foregroundStyle(.secondary)
@@ -383,14 +445,17 @@ struct HomeView: View {
         }
         .accessibilityIdentifier("detail.home")
         .task { await refreshStatuses() }
+        .onReceive(NotificationCenter.default.publisher(for: .firecrawlConfigurationChanged)) { _ in
+            Task { await refreshFirecrawlStatus() }
+        }
         .sheet(isPresented: $showingModelSetup) {
             LocalModelSetupWizard { Task { await refreshStatuses() } }
         }
         .confirmationDialog("Clear all recent searches?", isPresented: $confirmingClearHistory) {
-            Button("Clear Recent Searches", role: .destructive, action: clearSearchHistory)
+            Button("Clear Recent Searches", role: .destructive, action: clearRecentSearches)
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This removes saved search history from this Mac. Exported CSV files are not affected.")
+            Text("This only clears the Home page. Your complete search history remains available under Searches.")
         }
     }
 
@@ -414,8 +479,19 @@ struct HomeView: View {
     @MainActor
     private func refreshStatuses() async {
         modelAvailability = await LocalModelService.shared.availability()
+        await refreshFirecrawlStatus()
+    }
+
+    @MainActor
+    private func refreshFirecrawlStatus() async {
         let key = KeychainHelper.getKey()
-        guard !key.isEmpty else { creditStatus = "Firecrawl not connected"; return }
+        isFirecrawlConnected = !key.isEmpty
+        remainingCredits = nil
+        guard isFirecrawlConnected else {
+            creditStatus = "Firecrawl not connected"
+            return
+        }
+        creditStatus = "Checking monthly usage…"
         do {
             remainingCredits = try await FirecrawlService.shared.remainingCredits(apiKey: key)
             creditStatus = "crawl credits remaining this month"
@@ -1134,12 +1210,55 @@ struct SearchTabView: View {
 
 }
 
+// MARK: - List Creation
+
+struct NewListSheet: View {
+    @Binding var lists: [ProspectList]
+    let onCreated: (ProspectList) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("Create a New List").font(.title2.weight(.semibold))
+            Text("Give this target-company list a name.").foregroundStyle(.secondary)
+            TextField("List name", text: $name)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit(create)
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }
+                Button("Create", action: create)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(trimmedName.isEmpty)
+                    .accessibilityIdentifier("lists.create.confirm")
+            }
+        }
+        .padding(24)
+        .frame(width: 420)
+    }
+
+    private var trimmedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    private func create() {
+        guard !trimmedName.isEmpty else { return }
+        let list = ProspectList(name: trimmedName)
+        lists.append(list)
+        try? ProspectListStore.save(lists)
+        onCreated(list)
+        dismiss()
+    }
+}
+
 // MARK: - Prospects
 
 struct ProspectsView: View {
     let searchResults: [ProspectRecord]
     var keywords: [String] = []
     var locations: [String] = []
+    @Binding var lists: [ProspectList]
+    let title: String
+    let allowsCrawling: Bool
     @State private var exportState: ExportState = .idle
     @State private var enrichmentMessage: String?
     @State private var isEnriching = false
@@ -1156,11 +1275,15 @@ struct ProspectsView: View {
     @State private var hoveredProspectID: ProspectID?
     @State private var presentedSitemapID: ProspectID?
     @State private var enrichingProspectID: ProspectID?
+    @State private var prospectForNewList: ProspectID?
 
-    init(searchResults: [ProspectRecord], keywords: [String] = [], locations: [String] = []) {
+    init(searchResults: [ProspectRecord], keywords: [String] = [], locations: [String] = [], lists: Binding<[ProspectList]> = .constant([]), title: String = "Prospects", allowsCrawling: Bool = true) {
         self.searchResults = searchResults
         self.keywords = keywords
         self.locations = locations
+        _lists = lists
+        self.title = title
+        self.allowsCrawling = allowsCrawling
         _sitemapAvailability = State(initialValue: Dictionary(uniqueKeysWithValues: searchResults.compactMap { prospect in
             SitemapAvailabilityCache.cached(for: prospect.websiteURL).map { (prospect.id, $0) }
         }))
@@ -1180,7 +1303,7 @@ struct ProspectsView: View {
 
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Prospects")
+                    Text(title)
                         .font(.title2.weight(.semibold))
                     Text("\(searchResults.count) saved result\(searchResults.count == 1 ? "" : "s")")
                         .foregroundStyle(.secondary)
@@ -1188,14 +1311,16 @@ struct ProspectsView: View {
 
                 Spacer()
 
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text(remainingCredits.map { "Firecrawl credits: \($0)" } ?? "Firecrawl credits: —")
-                        .font(.callout.monospacedDigit())
-                    if let creditMessage {
-                        Text(creditMessage).font(.caption).foregroundStyle(.secondary)
+                if allowsCrawling {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(remainingCredits.map { "Firecrawl credits: \($0)" } ?? "Firecrawl credits: —")
+                            .font(.callout.monospacedDigit())
+                        if let creditMessage {
+                            Text(creditMessage).font(.caption).foregroundStyle(.secondary)
+                        }
                     }
+                    .accessibilityIdentifier("prospects.firecrawl-credits")
                 }
-                .accessibilityIdentifier("prospects.firecrawl-credits")
 
                 Button("Export CSV", systemImage: "square.and.arrow.down") {
                     Task { await exportResultsToCSV() }
@@ -1208,11 +1333,13 @@ struct ProspectsView: View {
                 .disabled(searchResults.isEmpty || isCheckingSitemaps)
                 .help("Checks /sitemap.xml directly with Swift HTTP. This does not use Firecrawl credits.")
 
-                Button("Crawl All Pages", systemImage: "person.text.rectangle") {
-                    confirmingCrawlAll = true
+                if allowsCrawling {
+                    Button("Crawl All Pages", systemImage: "person.text.rectangle") {
+                        confirmingCrawlAll = true
+                    }
+                    .disabled(searchResults.isEmpty || isEnriching || KeychainHelper.getKey().isEmpty)
+                    .help(KeychainHelper.getKey().isEmpty ? "Add a Firecrawl API key in Settings." : "Crawls the best personnel page found for every prospect.")
                 }
-                .disabled(searchResults.isEmpty || isEnriching || KeychainHelper.getKey().isEmpty)
-                .help(KeychainHelper.getKey().isEmpty ? "Add a Firecrawl API key in Settings." : "Crawls the best personnel page found for every prospect.")
             }
 
             if let message = exportState.message {
@@ -1291,7 +1418,16 @@ struct ProspectsView: View {
             Text("FireProspect will discover and crawl one personnel page for each result. Firecrawl charges are usage-based.")
         }
         .task {
-            await refreshCredits()
+            if allowsCrawling { await refreshCredits() }
+        }
+        .sheet(isPresented: Binding(
+            get: { prospectForNewList != nil },
+            set: { if !$0 { prospectForNewList = nil } }
+        )) {
+            NewListSheet(lists: $lists) { list in
+                if let id = prospectForNewList { add(id, to: list.id) }
+                prospectForNewList = nil
+            }
         }
     }
 
@@ -1341,7 +1477,7 @@ struct ProspectsView: View {
 
                     ScrollView(.horizontal) {
                         VStack(spacing: 0) {
-                            detailRow(values: ["Address", "Phone", "Website", "Team Page", "Found Emails", "Sitemap", "Crawl"], width: detailWidth, isHeader: true)
+                            detailRow(values: tableHeaders, width: detailWidth, isHeader: true)
                             ForEach(rows) { row in
                                 detailProspectRow(row, width: detailWidth)
                             }
@@ -1355,6 +1491,10 @@ struct ProspectsView: View {
         .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.primary.opacity(0.14)))
         .clipShape(RoundedRectangle(cornerRadius: 6))
         .accessibilityIdentifier("prospects.results-table")
+    }
+
+    private var tableHeaders: [String] {
+        ["Address", "Phone", "Website", "Team Page", "Found Emails", "Sitemap"] + (allowsCrawling ? ["Crawl"] : []) + ["List"]
     }
 
     private func rowBackground(_ id: ProspectID?) -> Color {
@@ -1417,14 +1557,26 @@ struct ProspectsView: View {
             .frame(width: width, alignment: .leading)
             detailCell(foundEmails(for: row.id), width: width).textSelection(.enabled)
             sitemapCell(for: row, width: width)
-            Button(enrichingProspectID == row.id ? "Crawling…" : "Crawl") {
-                if let prospect = searchResults.first(where: { $0.id == row.id }) { pendingProspect = prospect }
+            if allowsCrawling {
+                Button(enrichingProspectID == row.id ? "Crawling…" : "Crawl") {
+                    if let prospect = searchResults.first(where: { $0.id == row.id }) { pendingProspect = prospect }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(isEnriching || KeychainHelper.getKey().isEmpty)
+                .frame(width: width, alignment: .leading)
+                .accessibilityLabel("Crawl \(row.prospect.name)")
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .disabled(isEnriching || KeychainHelper.getKey().isEmpty)
+            Menu("Add to List") {
+                Button("New List…", systemImage: "plus") { prospectForNewList = row.id }
+                Divider()
+                ForEach(lists) { list in
+                    Button(list.name) { add(row.id, to: list.id) }
+                }
+            }
+            .menuStyle(.borderlessButton)
             .frame(width: width, alignment: .leading)
-            .accessibilityLabel("Crawl \(row.prospect.name)")
+            .accessibilityLabel("Add \(row.prospect.name) to list")
         }
         .font(.callout)
         .padding(.horizontal, 12)
@@ -1439,6 +1591,12 @@ struct ProspectsView: View {
 
     private func detailCell(_ value: String, width: CGFloat) -> some View {
         Text(value).lineLimit(1).frame(width: width, alignment: .leading)
+    }
+
+    private func add(_ prospectID: ProspectID, to listID: UUID) {
+        guard let prospect = searchResults.first(where: { $0.id == prospectID }) else { return }
+        lists = ProspectListStore.adding(prospect, to: listID, in: lists)
+        try? ProspectListStore.save(lists)
     }
 
     @ViewBuilder
@@ -1818,16 +1976,28 @@ struct SettingsTabView: View {
                 
                 HStack(spacing: 16) {
                     Button(action: {
-                        KeychainHelper.saveKey(firecrawlKey)
-                        firecrawlMessage = "Configured — credential stored securely without password prompts."
+                        let normalizedKey = firecrawlKey.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !normalizedKey.isEmpty else {
+                            firecrawlMessage = "Enter a Firecrawl API key before saving."
+                            return
+                        }
+                        if KeychainHelper.saveKey(normalizedKey), KeychainHelper.getKey() == normalizedKey {
+                            firecrawlKey = normalizedKey
+                            firecrawlMessage = "Configured — credential stored securely without password prompts."
+                            NotificationCenter.default.post(name: .firecrawlConfigurationChanged, object: nil)
+                        } else {
+                            firecrawlMessage = "The API key could not be saved to Keychain. Please try again."
+                        }
                     }) {
                         Text("Save API Key")
                     }
                     .buttonStyle(.borderedProminent)
+                    .disabled(firecrawlKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     Button("Remove", role: .destructive) {
                         _ = KeychainHelper.deleteKey()
                         firecrawlKey = ""
                         firecrawlMessage = "Credential removed."
+                        NotificationCenter.default.post(name: .firecrawlConfigurationChanged, object: nil)
                     }
                     .disabled(firecrawlKey.isEmpty)
                 }

@@ -160,6 +160,68 @@ enum SearchHistoryStore {
     }
 }
 
+/// A separately persisted home-page feed. Clearing it never deletes the full search archive.
+enum RecentSearchStore {
+    static func defaultURL(fileManager: FileManager = .default) throws -> URL {
+        try SearchHistoryStore.defaultURL(fileManager: fileManager)
+            .deletingLastPathComponent()
+            .appendingPathComponent("recent-searches.json")
+    }
+
+    static func load(fallback: [SearchHistoryEntry], from url: URL? = nil) -> [SearchHistoryEntry] {
+        guard let source = try? (url ?? defaultURL()), FileManager.default.fileExists(atPath: source.path) else { return fallback }
+        guard let data = try? Data(contentsOf: source), let entries = try? JSONDecoder().decode([SearchHistoryEntry].self, from: data) else { return [] }
+        return entries.sorted { $0.searchedAt > $1.searchedAt }
+    }
+
+    static func save(_ entries: [SearchHistoryEntry], to url: URL? = nil) throws {
+        try JSONEncoder().encode(entries).write(to: try (url ?? defaultURL()), options: .atomic)
+    }
+}
+
+struct ProspectList: Identifiable, Codable, Hashable, Sendable {
+    let id: UUID
+    var name: String
+    var prospects: [ProspectRecord]
+    let createdAt: Date
+
+    init(id: UUID = UUID(), name: String, prospects: [ProspectRecord] = [], createdAt: Date = Date()) {
+        self.id = id
+        self.name = name
+        self.prospects = prospects
+        self.createdAt = createdAt
+    }
+}
+
+enum ProspectListStore {
+    static func defaultURL(fileManager: FileManager = .default) throws -> URL {
+        let directory = try fileManager.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+            .appendingPathComponent("FireProspect", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory.appendingPathComponent("prospect-lists.json")
+    }
+
+    static func load(from url: URL? = nil) -> [ProspectList] {
+        guard let source = try? (url ?? defaultURL()), let data = try? Data(contentsOf: source) else { return [] }
+        return (try? JSONDecoder().decode([ProspectList].self, from: data)) ?? []
+    }
+
+    static func save(_ lists: [ProspectList], to url: URL? = nil) throws {
+        try JSONEncoder().encode(lists).write(to: try (url ?? defaultURL()), options: .atomic)
+    }
+
+    static func adding(_ prospect: ProspectRecord, to listID: UUID, in lists: [ProspectList]) -> [ProspectList] {
+        var updated = lists
+        guard let index = updated.firstIndex(where: { $0.id == listID }) else { return lists }
+        if let existing = updated[index].prospects.firstIndex(where: { $0.id == prospect.id }) {
+            updated[index].prospects[existing] = prospect
+        } else {
+            updated[index].prospects.append(prospect)
+        }
+        return updated
+    }
+}
+
 struct TeamMember: Identifiable, Codable, Hashable, Sendable {
     let id: TeamMemberID
     var name: String

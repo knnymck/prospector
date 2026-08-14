@@ -41,6 +41,13 @@ final class FireProspectUITests: XCTestCase {
         }
     }
 
+    func testSidebarListPlusOpensListCreationSheet() {
+        let createButton = app.descendants(matching: .any)["sidebar.lists.create"]
+        XCTAssertTrue(createButton.waitForExistence(timeout: 5))
+        createButton.click()
+        XCTAssertTrue(app.descendants(matching: .any)["lists.create.confirm"].waitForExistence(timeout: 5))
+    }
+
     func testKeyboardCommandsSwitchDestinations() {
         app.typeKey("3", modifierFlags: .command)
         XCTAssertTrue(app.descendants(matching: .any)["detail.prospects"].waitForExistence(timeout: 5))
