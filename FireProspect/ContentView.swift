@@ -1974,7 +1974,7 @@ struct SettingsTabView: View {
                         }
                         if KeychainHelper.saveKey(normalizedKey), KeychainHelper.getKey() == normalizedKey {
                             firecrawlKey = normalizedKey
-                            firecrawlMessage = "Configured — credential stored securely without password prompts."
+                            firecrawlMessage = "Configured — credential stored in Keychain."
                             NotificationCenter.default.post(name: .firecrawlConfigurationChanged, object: nil)
                         } else {
                             firecrawlMessage = "The API key could not be saved to Keychain. Please try again."
@@ -2043,7 +2043,7 @@ struct SettingsTabView: View {
         .accessibilityIdentifier("detail.settings")
         .onAppear {
             firecrawlKey = KeychainHelper.getKey()
-            firecrawlMessage = firecrawlKey.isEmpty ? "Not configured. Enter the API key once for this updated build." : "Configured securely in Keychain."
+            firecrawlMessage = firecrawlKey.isEmpty ? "Not configured. Enter the Firecrawl API key in Keychain." : "Configured securely in Keychain."
             Task { await refreshLocalModel() }
         }
         .sheet(isPresented: $showingModelSetup) {
