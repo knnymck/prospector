@@ -72,7 +72,7 @@ enum SearchScope: Hashable, Sendable {
 /// The cities, states, and ZIP codes the user asked to search. MapKit results
 /// outside this area are discarded so the device location cannot leak in.
 struct SearchArea: Sendable {
-    static let maximumDistanceMeters: Double = 30_000
+    static let maximumDistanceMeters: Double = 65_000
 
     let postalCodes: Set<String>
     let cities: Set<CityID>

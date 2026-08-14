@@ -6,10 +6,11 @@ actor MapKitSearchService {
     func searchZipCode(category: String, zip: ZipCodeModel) async throws -> [ProspectCandidate] {
         print("🔍 Starting grid search for '\(category)' in Zip: \(zip.id.rawValue)...")
         
-        let latOffset = 0.015
-        let lonOffset = 0.015
+        let latOffset = 0.02
+        let lonOffset = 0.02
         
         let gridCenters: [CLLocationCoordinate2D] = [
+            zip.coordinate,
             CLLocationCoordinate2D(latitude: zip.coordinate.latitude + (latOffset * 0.8), longitude: zip.coordinate.longitude - (lonOffset * 0.8)),
             CLLocationCoordinate2D(latitude: zip.coordinate.latitude + (latOffset * 0.8), longitude: zip.coordinate.longitude + (lonOffset * 0.8)),
             CLLocationCoordinate2D(latitude: zip.coordinate.latitude - (latOffset * 0.8), longitude: zip.coordinate.longitude - (lonOffset * 0.8)),
@@ -26,13 +27,10 @@ actor MapKitSearchService {
                     
                     let region = MKCoordinateRegion(
                         center: centerPoint,
-                        latitudinalMeters: 10_000,
-                        longitudinalMeters: 10_000
+                        latitudinalMeters: 25_000,
+                        longitudinalMeters: 25_000
                     )
                     request.region = region
-                    if #available(macOS 15.0, *) {
-                        request.regionPriority = .required
-                    }
 
                     let search = MKLocalSearch(request: request)
                     let response = try await search.start()
