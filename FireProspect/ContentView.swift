@@ -1356,7 +1356,7 @@ struct ProspectsView: View {
                     .progressViewStyle(.linear)
                     .animation(.linear(duration: 0.25), value: enrichmentProgress)
                     .accessibilityIdentifier("prospects.enrichment-progress")
-            } else if isFindingPersonnelPages {
+            } else if isFindingPersonnelPages && findingPersonnelPageID == nil {
                 ProgressView(value: Double(checkedPersonnelPageCount), total: Double(max(searchResults.count, 1))) {
                     Text("Finding team pages \(checkedPersonnelPageCount) of \(searchResults.count)")
                 }
@@ -1533,18 +1533,7 @@ struct ProspectsView: View {
             detailCell(row.prospect.phone, width: width)
             Link(row.prospect.websiteURL.host() ?? row.prospect.websiteURL.absoluteString, destination: row.prospect.websiteURL)
                 .lineLimit(1).frame(width: width, alignment: .leading)
-            Group {
-                if let url = enrichmentReceipts[row.id]?.selectedURL {
-                    Link(url.absoluteString, destination: url)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .help(url.absoluteString)
-                        .accessibilityLabel("Open team page for \(row.prospect.name)")
-                } else {
-                    Text("—").foregroundStyle(.secondary)
-                }
-            }
-            .frame(width: width, alignment: .leading)
+            teamPageCell(for: row, width: width)
             detailCell(foundEmails(for: row.id), width: width).textSelection(.enabled)
             personnelPageCell(for: row, width: width)
             if allowsCrawling {
@@ -1614,13 +1603,34 @@ struct ProspectsView: View {
     }
 
     @ViewBuilder
+    private func teamPageCell(for row: NumberedProspectRow, width: CGFloat) -> some View {
+        Group {
+            if isPersonnelPageInProgress(for: row.id) {
+                ProgressView()
+                    .progressViewStyle(.linear)
+                    .controlSize(.small)
+                    .accessibilityLabel("Finding team page for \(row.prospect.name)")
+                    .accessibilityIdentifier("prospects.team-page-progress.\(row.id.rawValue)")
+            } else if let url = enrichmentReceipts[row.id]?.selectedURL {
+                Link(url.absoluteString, destination: url)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(url.absoluteString)
+                    .accessibilityLabel("Open team page for \(row.prospect.name)")
+            } else {
+                Text("—").foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: width, alignment: .leading)
+    }
+
+    @ViewBuilder
     private func personnelPageCell(for row: NumberedProspectRow, width: CGFloat) -> some View {
         Group {
             if isPersonnelPageInProgress(for: row.id) {
-                Button("Finding…") {}
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(true)
+                Text("Finding…")
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Finding team page for \(row.prospect.name)")
             } else if let url = enrichmentReceipts[row.id]?.selectedURL {
                 Link("Found", destination: url)
                     .help(url.absoluteString)
@@ -1665,7 +1675,6 @@ struct ProspectsView: View {
         guard !isFindingPersonnelPages else { return }
         isFindingPersonnelPages = true
         findingPersonnelPageID = prospect.id
-        checkedPersonnelPageCount = 0
         enrichmentMessage = "Looking for a team or staff page for \(prospect.name)…"
 
         let receipt = try? await SiteEnrichmentService.shared.findPersonnelPage(website: prospect.websiteURL)
@@ -1673,7 +1682,6 @@ struct ProspectsView: View {
             enrichmentReceipts[prospect.id] = receipt
         }
         checkedPersonnelPageIDs.insert(prospect.id)
-        checkedPersonnelPageCount = 1
 
         isFindingPersonnelPages = false
         findingPersonnelPageID = nil
