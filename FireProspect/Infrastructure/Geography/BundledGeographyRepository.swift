@@ -73,6 +73,11 @@ actor BundledGeographyRepository {
         try await indexes().recordsByZIP[id]
     }
 
+    func randomCity() async throws -> City? {
+        let cities = try await indexes().citiesByState.values.flatMap { $0 }
+        return cities.randomElement()
+    }
+
     private func indexes() async throws -> Indexes {
         if let loadTask { return try await loadTask.value }
         let bundle = bundle
