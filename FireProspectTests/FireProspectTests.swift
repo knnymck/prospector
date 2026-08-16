@@ -89,6 +89,14 @@ final class FireProspectTests: XCTestCase {
         XCTAssertNotEqual(maine, oregon)
     }
 
+    func testRandomCityIncludesAState() async throws {
+        let repository = BundledGeographyRepository(bundle: Bundle(for: Self.self))
+        let city = try await repository.randomCity()
+        XCTAssertNotNil(city)
+        XCTAssertFalse(city?.id.stateID.rawValue.isEmpty ?? true)
+        XCTAssertFalse(city?.name.isEmpty ?? true)
+    }
+
     func testEmptyScopesResolveNoPostalCodes() async throws {
         let repository = BundledGeographyRepository(bundle: Bundle(for: Self.self))
 

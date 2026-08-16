@@ -647,9 +647,18 @@ struct SearchTabView: View {
     
     private var geographyConnectorSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("Search area", systemImage: "map")
-                .font(.headline)
-            Text("Choose one or more states, then select individual cities or include every city in those states.")
+            HStack {
+                Label("Search area", systemImage: "map")
+                    .font(.headline)
+                Spacer()
+                Button("Random city", systemImage: "dice") {
+                    Task { await pickRandomCity() }
+                }
+                .disabled(allStates.isEmpty || isSearching)
+                .help("Pick a random U.S. city and its state.")
+                .accessibilityIdentifier("search.random-city")
+            }
+            Text("Choose one or more states, then select individual cities or include every city in those states. Or pick a random city.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
             
@@ -1027,6 +1036,24 @@ struct SearchTabView: View {
         selectedCityIDs = selectedCityIDs.filter { $0.stateID != stateID }
         selectedCityRecords = selectedCityRecords.filter { $0.key.stateID != stateID }
         if selectedStates.isEmpty { selectAllCities = false }
+    }
+
+    @MainActor
+    private func pickRandomCity() async {
+        do {
+            guard let city = try await BundledGeographyRepository.shared.randomCity() else { return }
+            selectAllCities = false
+            selectedStates = [city.id.stateID]
+            selectedCityIDs = [city.id]
+            selectedCityRecords = [city.id: city]
+            stateSearch = ""
+            citySearch = ""
+            isStateDropdownFocused = false
+            isCityDropdownFocused = false
+            geographyError = nil
+        } catch {
+            geographyError = String(describing: error)
+        }
     }
 
     @MainActor
